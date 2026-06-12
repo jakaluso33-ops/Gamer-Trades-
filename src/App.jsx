@@ -1,830 +1,839 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
 const ASSETS = {
-  BTC: { name: 'BTC/USD', basePrice: 45000, volatility: 0.012, color: '#f7931a' },
-  GOLD: { name: 'XAU/USD', basePrice: 2000, volatility: 0.005, color: '#ffd700' },
-  SPX: { name: 'S&P 500', basePrice: 5000, volatility: 0.006, color: '#00eaff' },
-  OIL: { name: 'OIL/USD', basePrice: 80, volatility: 0.015, color: '#cd853f' },
-  ETH: { name: 'ETH/USD', basePrice: 2500, volatility: 0.018, color: '#627eea' },
-  EURUSD: { name: 'EUR/USD', basePrice: 1.08, volatility: 0.003, color: '#00ff88' },
+  BTC:    { name: 'BTC/USD',  basePrice: 45000, volatility: 0.012, color: '#f7931a' },
+  GOLD:   { name: 'XAU/USD',  basePrice: 2000,  volatility: 0.005, color: '#ffd700' },
+  SPX:    { name: 'S&P 500',  basePrice: 5000,  volatility: 0.006, color: '#00eaff' },
+  OIL:    { name: 'OIL/USD',  basePrice: 80,    volatility: 0.015, color: '#cd853f' },
+  ETH:    { name: 'ETH/USD',  basePrice: 2500,  volatility: 0.018, color: '#627eea' },
+  EURUSD: { name: 'EUR/USD',  basePrice: 1.08,  volatility: 0.003, color: '#00ff88' },
 };
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1H', '4H', '1D'];
-const TIMEFRAME_SPEED = { '1m': 1, '5m': 1.2, '15m': 1.5, '1H': 2, '4H': 2.5, '1D': 3 };
+const TF_SPEED   = { '1m': 1, '5m': 1.2, '15m': 1.5, '1H': 2, '4H': 2.5, '1D': 3 };
 
 const LEVELS = [
-  { name: 'Market Peasant', minXP: 0, color: '#aaaaaa' },
-  { name: 'Scalp Ninja', minXP: 100, color: '#00ff88' },
-  { name: 'Chart Wizard', minXP: 300, color: '#00eaff' },
-  { name: 'Trading God', minXP: 600, color: '#ffe600' },
+  { name: 'MARKET PEASANT', minXP: 0,    color: '#aaaaaa' },
+  { name: 'CANDLE SQUIRE',  minXP: 50,   color: '#88cc88' },
+  { name: 'SCALP NINJA',    minXP: 120,  color: '#00ff88' },
+  { name: 'CHART WIZARD',   minXP: 250,  color: '#00eaff' },
+  { name: 'TREND MASTER',   minXP: 420,  color: '#4488ff' },
+  { name: 'VOLUME LORD',    minXP: 650,  color: '#cc44ff' },
+  { name: 'ALGO WARRIOR',   minXP: 950,  color: '#ff8800' },
+  { name: 'TRADING GOD',    minXP: 1400, color: '#ffe600' },
 ];
 
 const POWERUPS = [
-  { id: 'iron_shield', name: 'IRON SHIELD', desc: "SL won't cost a life once", icon: '🛡️', color: '#00eaff' },
-  { id: 'double_xp', name: 'DOUBLE XP', desc: '2x XP for 5 trades', icon: '⚡', color: '#ffe600' },
-  { id: 'sniper_mode', name: 'SNIPER MODE', desc: 'See next 3 candle directions', icon: '🎯', color: '#ff2d78' },
-  { id: 'bonus_coins', name: 'BONUS COINS', desc: '+$500 instant bonus', icon: '💰', color: '#00ff88' },
-  { id: 'fast_forward', name: 'FAST FORWARD', desc: 'Candles 2x speed for 30s', icon: '⏩', color: '#ff7700' },
+  { id: 'iron_shield',  name: 'IRON SHIELD',   desc: "SL won't cost a life (1x)",   icon: '🛡️', color: '#00eaff',  rarity: 'COMMON' },
+  { id: 'double_xp',   name: 'DOUBLE XP',      desc: '2× XP for next 5 trades',    icon: '⚡', color: '#ffe600',  rarity: 'RARE' },
+  { id: 'sniper_mode', name: 'SNIPER MODE',    desc: 'See next 3 candle directions',icon: '🎯', color: '#ff2d78',  rarity: 'RARE' },
+  { id: 'bonus_coins', name: 'BONUS COINS',    desc: '+$500 instant balance bonus', icon: '💰', color: '#00ff88',  rarity: 'COMMON' },
+  { id: 'fast_forward',name: 'FAST FORWARD',   desc: 'Candles 2× speed for 30s',   icon: '⏩', color: '#ff7700',  rarity: 'LEGENDARY' },
 ];
 
-const QUESTS_TEMPLATE = [
-  { id: 'win3', name: 'Win 3 Trades', target: 3, type: 'wins', reward: 50, rewardType: 'XP' },
-  { id: 'profit500', name: 'Make $500 Profit', target: 500, type: 'profit', reward: 200, rewardType: 'coins' },
-  { id: 'stopOrder', name: 'Use Stop Order', target: 1, type: 'stopOrder', reward: 30, rewardType: 'XP' },
+const QUESTS_TPL = [
+  { id: 'win3',     name: 'Win 3 Trades',   target: 3,   type: 'wins',      reward: 50,  rt: 'XP'   },
+  { id: 'profit500',name: 'Make $500 P&L',  target: 500, type: 'profit',    reward: 200, rt: 'coins'},
+  { id: 'stopOrd',  name: 'Use Stop Order', target: 1,   type: 'stopOrder', reward: 30,  rt: 'XP'   },
 ];
 
 const MAX_CANDLES = 80;
-const MAX_POSITIONS = 3;
-const INITIAL_BALANCE = 10000;
+const MAX_POS     = 3;
+const INIT_BAL    = 10000;
 
-// ─── AUDIO ────────────────────────────────────────────────────────────────────
-
-function createAudioCtx() {
-  try {
-    return new (window.AudioContext || window.webkitAudioContext)();
-  } catch (e) {
-    return null;
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO
+// ─────────────────────────────────────────────────────────────────────────────
+function mkAudio() {
+  try { return new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
 }
-
-function playSound(audioCtxRef, type) {
+function playSound(ref, type) {
   try {
-    if (!audioCtxRef.current) audioCtxRef.current = createAudioCtx();
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
+    if (!ref.current) ref.current = mkAudio();
+    const ctx = ref.current; if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume();
-    const now = ctx.currentTime;
-
-    const tone = (freq, start, dur, vol = 0.3, wave = 'sine') => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = wave;
-      osc.frequency.value = freq;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(vol, now + start);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
-      osc.start(now + start);
-      osc.stop(now + start + dur + 0.05);
+    const t = ctx.currentTime;
+    const tone = (f, s, d, v = 0.28, w = 'sine') => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = w; o.frequency.value = f;
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(v, t + s);
+      g.gain.exponentialRampToValueAtTime(0.001, t + s + d);
+      o.start(t + s); o.stop(t + s + d + 0.05);
     };
-
-    if (type === 'coin') {
-      tone(880, 0, 0.08, 0.25, 'sine');
-      tone(1320, 0.05, 0.1, 0.2, 'sine');
-    } else if (type === 'fill') {
-      tone(440, 0, 0.06, 0.2, 'square');
-      tone(660, 0.06, 0.08, 0.18, 'square');
-    } else if (type === 'stopHit') {
-      tone(220, 0, 0.15, 0.35, 'sawtooth');
-      tone(110, 0.12, 0.3, 0.3, 'sawtooth');
-    } else if (type === 'levelUp') {
-      [261, 329, 392, 523].forEach((f, i) => tone(f, i * 0.1, 0.1, 0.25));
-    } else if (type === 'criticalHit') {
-      [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.08, 0.12, 0.22, 'square'));
-    } else if (type === 'gameOver') {
-      [523, 392, 329, 261, 196].forEach((f, i) => tone(f, i * 0.15, 0.18, 0.28, 'sawtooth'));
-    } else if (type === 'danger') {
-      [0, 0.2, 0.4].forEach(t => tone(150, t, 0.1, 0.28, 'square'));
-    }
-  } catch (_) {}
+    if (type === 'coin')      { tone(880, 0, .08, .22); tone(1320, .05, .1, .18); }
+    else if (type === 'fill') { tone(440, 0, .06, .2, 'square'); tone(660, .06, .08, .18, 'square'); }
+    else if (type === 'slHit'){ tone(220, 0, .15, .32, 'sawtooth'); tone(110, .12, .3, .28, 'sawtooth'); }
+    else if (type === 'lvlUp'){ [261,329,392,523].forEach((f,i)=>tone(f,i*.1,.1,.22)); }
+    else if (type === 'crit') { [523,659,784,1047,1319].forEach((f,i)=>tone(f,i*.08,.12,.2,'square')); }
+    else if (type === 'over') { [523,392,329,261,196].forEach((f,i)=>tone(f,i*.15,.18,.25,'sawtooth')); }
+    else if (type === 'danger'){ [0,.2,.4].forEach(s=>tone(150,s,.1,.25,'square')); }
+    else if (type === 'power') { [523,659,784,1047].forEach((f,i)=>tone(f,i*.09,.1,.2)); }
+  } catch {}
 }
 
-// ─── PRICE GENERATION ─────────────────────────────────────────────────────────
-
-function generateCandle(prevClose, assetKey) {
-  const { volatility } = ASSETS[assetKey];
-  const spike = Math.random() < 0.07;
-  const vol = volatility * (spike ? 3.5 : 1);
-  const bias = (Math.random() - 0.485) * prevClose * vol;
+// ─────────────────────────────────────────────────────────────────────────────
+// PRICE GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+function genCandle(prevClose, assetKey) {
+  const { volatility: v } = ASSETS[assetKey];
+  const spike = Math.random() < .07;
+  const vol = v * (spike ? 3.5 : 1);
   const open = prevClose;
-  const close = Math.max(open + bias, prevClose * 0.0001);
-  const wTop = Math.random() * prevClose * vol * 0.6;
-  const wBot = Math.random() * prevClose * vol * 0.6;
-  const high = Math.max(open, close) + wTop;
-  const low = Math.min(open, close) - Math.max(wBot, 0.00001);
+  const close = Math.max(open + (Math.random() - .485) * open * vol, open * .0001);
+  const wH = Math.random() * open * vol * .6;
+  const wL = Math.random() * open * vol * .6;
+  const high = Math.max(open, close) + wH;
+  const low  = Math.min(open, close) - Math.max(wL, .00001);
   const volume = Math.floor((Math.random() * 900 + 100) * (spike ? 3 : 1));
   return { open, high, low, close, volume };
 }
-
-function generateInitialCandles(assetKey) {
-  let price = ASSETS[assetKey].basePrice;
+function genInitCandles(assetKey) {
+  let p = ASSETS[assetKey].basePrice;
   const arr = [];
   for (let i = 0; i < MAX_CANDLES; i++) {
-    const c = generateCandle(price, assetKey);
-    arr.push(c);
-    price = c.close;
+    const c = genCandle(p, assetKey); arr.push(c); p = c.close;
   }
   return arr;
 }
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 function getLevelInfo(xp) {
   let lvl = LEVELS[0];
-  for (const l of LEVELS) { if (xp >= l.minXP) lvl = l; }
+  for (const l of LEVELS) if (xp >= l.minXP) lvl = l;
   const idx = LEVELS.indexOf(lvl);
   const next = LEVELS[idx + 1];
   const pct = next ? Math.min(100, ((xp - lvl.minXP) / (next.minXP - lvl.minXP)) * 100) : 100;
   return { level: lvl, next, progress: pct };
 }
-
-function fmtPrice(p) {
+function fmtP(p) {
   if (p == null || isNaN(p)) return '—';
   if (p >= 1000) return p.toFixed(2);
-  if (p >= 10) return p.toFixed(3);
+  if (p >= 10)   return p.toFixed(3);
   return p.toFixed(5);
 }
-
 function fmtPnl(pnl) {
   if (pnl == null) return '—';
   return (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
 }
-
 function calcPnl(pos, price) {
-  const mult = pos.direction === 'LONG' ? 1 : -1;
-  return (price - pos.entry) * mult * pos.quantity;
+  return (price - pos.entry) * (pos.direction === 'LONG' ? 1 : -1) * pos.quantity;
 }
-
-function calcGrade(pnl) {
-  if (pnl >= 500) return 'S';
-  if (pnl >= 200) return 'A';
-  if (pnl >= 50) return 'B';
-  if (pnl >= 0) return 'C';
-  if (pnl >= -100) return 'D';
+function sessionGrade(pnl, winRate) {
+  if (pnl >= 500 && winRate >= 60) return 'S';
+  if (pnl >= 200 && winRate >= 50) return 'A';
+  if (pnl >= 0   && winRate >= 40) return 'B';
+  if (pnl >= -100) return 'C';
+  if (pnl >= -300) return 'D';
   return 'F';
 }
+const GRADE_COLOR = { S:'#ffe600', A:'#00ff88', B:'#00eaff', C:'#ff8800', D:'#ff7777', F:'#ff2d78' };
 
-// ─── APP ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CSS KEYFRAMES (injected once)
+// ─────────────────────────────────────────────────────────────────────────────
+const KEYFRAMES = `
+@keyframes coinFall {
+  0%   { transform:translateY(-30px) rotate(0deg) scale(1); opacity:1; }
+  80%  { opacity:.7; }
+  100% { transform:translateY(105vh) rotate(800deg) scale(.5); opacity:0; }
+}
+@keyframes skullFall {
+  0%   { transform:translateY(-30px) rotate(0deg); opacity:1; }
+  100% { transform:translateY(105vh) rotate(360deg); opacity:0; }
+}
+@keyframes screenShake {
+  0%,100%{transform:translate(0,0)}
+  10%{transform:translate(-6px,-3px)}
+  20%{transform:translate(6px,3px)}
+  30%{transform:translate(-5px,4px)}
+  40%{transform:translate(5px,-4px)}
+  50%{transform:translate(-3px,5px)}
+  60%{transform:translate(3px,-3px)}
+  70%{transform:translate(-6px,2px)}
+  80%{transform:translate(6px,-2px)}
+  90%{transform:translate(-2px,4px)}
+}
+@keyframes floatUp {
+  0%  { transform:translateY(0) scale(1); opacity:1; }
+  60% { opacity:.8; }
+  100%{ transform:translateY(-90px) scale(.85); opacity:0; }
+}
+@keyframes slam {
+  0%  { transform:scale(3.5) translateY(-20px); opacity:0; }
+  35% { transform:scale(1.15) translateY(0); opacity:1; }
+  70% { transform:scale(.95); }
+  100%{ transform:scale(1); opacity:1; }
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes fastBlink { 0%,100%{opacity:1} 50%{opacity:.1} }
+@keyframes scanline {
+  0%  { transform:translateY(-100%); }
+  100%{ transform:translateY(120vh); }
+}
+@keyframes powerPop {
+  0%  { transform:scale(0) rotate(-8deg); opacity:0; }
+  55% { transform:scale(1.08) rotate(2deg); opacity:1; }
+  100%{ transform:scale(1) rotate(0); opacity:1; }
+}
+@keyframes cdPop { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
+@keyframes neonFlicker {
+  0%,19%,21%,23%,25%,54%,56%,100%{opacity:1}
+  20%,22%,24%,55%{opacity:.4}
+}
+@keyframes borderGreen {
+  0%,100%{box-shadow:0 0 0 2px #00ff88,0 0 20px #00ff8844}
+  50%    {box-shadow:0 0 0 4px #00ff88,0 0 50px #00ff8866}
+}
+@keyframes borderDanger {
+  0%,100%{box-shadow:0 0 0 3px #ff2d78,0 0 25px #ff2d7855}
+  50%    {box-shadow:0 0 0 6px #ff2d78,0 0 55px #ff2d7888}
+}
+@keyframes borderFire {
+  0%  {box-shadow:0 0 0 3px #ff8800,0 0 30px #ff880066}
+  33% {box-shadow:0 0 0 4px #ffe600,0 0 40px #ffe60055}
+  66% {box-shadow:0 0 0 3px #ff4400,0 0 30px #ff440066}
+  100%{box-shadow:0 0 0 3px #ff8800,0 0 30px #ff880066}
+}
+@keyframes critSlam {
+  0%  { transform:translateX(-50%) scale(3) translateY(-20px); opacity:0; }
+  40% { transform:translateX(-50%) scale(1.1); opacity:1; }
+  70% { transform:translateX(-50%) scale(.97); }
+  100%{ transform:translateX(-50%) scale(1); opacity:1; }
+}
+@keyframes dangerPulse {
+  0%,100%{opacity:1; transform:scale(1);}
+  50%{opacity:.6; transform:scale(1.06);}
+}
+@keyframes shieldOrbit {
+  0%  { transform:rotate(0deg) translateX(22px) rotate(0deg); }
+  100%{ transform:rotate(360deg) translateX(22px) rotate(-360deg); }
+}
+`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SVG CANDLE CHART
+// ─────────────────────────────────────────────────────────────────────────────
+const CHART_W = 720;
+const CHART_H = 370;
+const PAD = { t: 20, r: 66, b: 6, l: 6 };
+
+function CandleChart({ candles, positions, currentPrice, assetKey, onFireMode }) {
+  const vis = candles.slice(-80);
+  if (!vis.length) return null;
+
+  const prices = vis.flatMap(c => [c.high, c.low]);
+  let minP = Math.min(...prices), maxP = Math.max(...prices);
+  const rng = maxP - minP || minP * .01 || 1;
+  minP -= rng * .06; maxP += rng * .06;
+  const aRng = maxP - minP;
+  const W = CHART_W - PAD.l - PAD.r;
+  const H = CHART_H - PAD.t - PAD.b;
+  const cw = Math.max(2, W / vis.length - 1);
+  const toY = p => PAD.t + (1 - (p - minP) / aRng) * H;
+  const toX = i => PAD.l + (i + .5) * (W / vis.length);
+
+  // grid
+  const grid = Array.from({ length: 6 }, (_, i) => {
+    const p = minP + aRng * i / 5;
+    const y = toY(p);
+    const lbl = p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
+    return (
+      <g key={i}>
+        <line x1={PAD.l} y1={y} x2={CHART_W - PAD.r} y2={y} stroke="#151530" strokeWidth="1" />
+        <text x={CHART_W - PAD.r + 3} y={y + 4} fill="#334466" fontSize="9" fontFamily="VT323,monospace">{lbl}</text>
+      </g>
+    );
+  });
+
+  // candles
+  const candleEls = vis.map((c, i) => {
+    const up = c.close >= c.open;
+    const col = up ? '#00ff88' : '#ff2d78';
+    const cx = Math.round(toX(i));
+    const bT = toY(Math.max(c.open, c.close));
+    const bB = toY(Math.min(c.open, c.close));
+    const bH = Math.max(1, bB - bT);
+    return (
+      <g key={i}>
+        <line x1={cx} y1={toY(c.high)} x2={cx} y2={toY(c.low)} stroke={col} strokeWidth="1" opacity=".6" />
+        <rect x={cx - cw / 2} y={bT} width={cw} height={bH} fill={col} opacity=".9" rx=".5" />
+      </g>
+    );
+  });
+
+  // SL / TP / entry lines
+  const lineEls = positions.filter(p => p.asset === assetKey).flatMap(p => {
+    const elems = [];
+    const inProfit = calcPnl(p, currentPrice) > 0;
+
+    // Entry
+    const ey = toY(p.entry);
+    if (ey > PAD.t && ey < PAD.t + H) {
+      elems.push(
+        <g key={'e' + p.id}>
+          <line x1={PAD.l} y1={ey} x2={CHART_W - PAD.r} y2={ey}
+            stroke={p.direction === 'LONG' ? '#00eaff' : '#ff8800'} strokeWidth="1" strokeDasharray="8,5" opacity=".5" />
+        </g>
+      );
+    }
+
+    // SL — gold if in profit
+    if (p.sl) {
+      const sy = toY(p.sl);
+      const slColor = inProfit ? '#FFD700' : '#ff2d78';
+      if (sy > PAD.t && sy < PAD.t + H) {
+        elems.push(
+          <g key={'sl' + p.id}>
+            <line x1={PAD.l} y1={sy} x2={CHART_W - PAD.r} y2={sy}
+              stroke={slColor} strokeWidth={inProfit ? 2 : 1.5} strokeDasharray="5,3" />
+            <rect x={PAD.l} y={sy - 9} width={inProfit ? 40 : 18} height={12} fill={slColor + '22'} rx="1" />
+            <text x={PAD.l + 2} y={sy + 1} fill={slColor} fontSize="9" fontFamily="VT323,monospace">
+              {inProfit ? '🛡 SL' : 'SL'}
+            </text>
+          </g>
+        );
+      }
+    }
+
+    // TP
+    if (p.tp) {
+      const ty = toY(p.tp);
+      if (ty > PAD.t && ty < PAD.t + H) {
+        elems.push(
+          <g key={'tp' + p.id}>
+            <line x1={PAD.l} y1={ty} x2={CHART_W - PAD.r} y2={ty}
+              stroke="#00ff88" strokeWidth="1.5" strokeDasharray="5,3" />
+            <rect x={PAD.l} y={ty - 9} width={18} height={12} fill="#00ff8822" rx="1" />
+            <text x={PAD.l + 2} y={ty + 1} fill="#00ff88" fontSize="9" fontFamily="VT323,monospace">TP</text>
+          </g>
+        );
+      }
+    }
+    return elems;
+  });
+
+  // Current price
+  const cpY = toY(currentPrice);
+  const cpLbl = fmtP(currentPrice);
+
+  return (
+    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} style={{ width: '100%', height: '100%' }} preserveAspectRatio="none">
+      <rect width={CHART_W} height={CHART_H} fill="#040410" />
+      {grid}
+      {lineEls}
+      {candleEls}
+      <line x1={PAD.l} y1={cpY} x2={CHART_W - PAD.r} y2={cpY}
+        stroke="#ffe600" strokeWidth="1" strokeDasharray="7,4" opacity=".85" />
+      <rect x={CHART_W - PAD.r + 2} y={cpY - 9} width={PAD.r - 4} height={18} fill="#ffe600" rx="2" />
+      <text x={CHART_W - PAD.r + 4} y={cpY + 5} fill="#000" fontSize="9"
+        fontFamily="VT323,monospace" fontWeight="bold">{cpLbl}</text>
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const audioCtxRef = useRef(null);
-  const candleIntervalRef = useRef(null);
-  const comboTimerRef = useRef(null);
-  const ffTimerRef = useRef(null);
-  const continueTimerRef = useRef(null);
+  // inject CSS once
+  useEffect(() => {
+    if (!document.getElementById('cw-kf')) {
+      const s = document.createElement('style');
+      s.id = 'cw-kf'; s.textContent = KEYFRAMES;
+      document.head.appendChild(s);
+    }
+  }, []);
 
-  // Chart/Asset
-  const [selectedAsset, setSelectedAsset] = useState('BTC');
-  const [timeframe, setTimeframe] = useState('1m');
-  const [candlesByAsset, setCandlesByAsset] = useState(() => {
+  const audioRef        = useRef(null);
+  const candleIntRef    = useRef(null);
+  const comboIntRef     = useRef(null);
+  const ffTimerRef      = useRef(null);
+  const continueIntRef  = useRef(null);
+  const coinIntRef      = useRef(null);
+
+  // ── MARKET ──────────────────────────────────────────────────────────────
+  const [asset, setAsset] = useState('BTC');
+  const [tf, setTf]       = useState('1m');
+  const [candleMap, setCandleMap] = useState(() => {
     const o = {};
-    for (const k of Object.keys(ASSETS)) o[k] = generateInitialCandles(k);
+    for (const k of Object.keys(ASSETS)) o[k] = genInitCandles(k);
     return o;
   });
 
-  // Game core
-  const [balance, setBalance] = useState(INITIAL_BALANCE);
+  // ── GAME CORE ────────────────────────────────────────────────────────────
+  const [balance, setBalance]   = useState(INIT_BAL);
   const [dailyPnl, setDailyPnl] = useState(0);
-  const [lives, setLives] = useState(3);
-  const [xp, setXp] = useState(0);
-  const [winStreak, setWinStreak] = useState(0);
-  const [comboCount, setComboCount] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
-  const [continueCountdown, setContinueCountdown] = useState(null);
-  const [sessionOver, setSessionOver] = useState(false);
-  const [grade, setGrade] = useState('C');
+  const [lives, setLives]       = useState(3);          // 0–3, halves allowed
+  const [xp, setXp]             = useState(0);
+  const [streak, setStreak]     = useState(0);
+  const [combo, setCombo]       = useState(0);
 
-  // Positions & history
-  const [positions, setPositions] = useState([]);
+  // session stats for end-screen
+  const [statWins, setStatWins]   = useState(0);
+  const [statLoss, setStatLoss]   = useState(0);
+  const [statBest, setStatBest]   = useState(null);
+  const [statWorst,setStatWorst]  = useState(null);
+  const [statMaxStreak, setStatMaxStreak] = useState(0);
+
+  // ── TRADING ──────────────────────────────────────────────────────────────
+  const [positions, setPositions]       = useState([]);
   const [tradeHistory, setTradeHistory] = useState([]);
 
-  // Order inputs
-  const [direction, setDirection] = useState('LONG');
-  const [orderType, setOrderType] = useState('Market');
-  const [quantity, setQuantity] = useState('0.1');
-  const [slPrice, setSlPrice] = useState('');
-  const [tpPrice, setTpPrice] = useState('');
-  const [limitPrice, setLimitPrice] = useState('');
-  const [stopPriceInput, setStopPriceInput] = useState('');
+  // ── ORDER FORM ───────────────────────────────────────────────────────────
+  const [direction, setDirection]         = useState('LONG');
+  const [orderType, setOrderType]         = useState('Market');
+  const [quantity, setQuantity]           = useState('0.1');
+  const [slPrice, setSlPrice]             = useState('');
+  const [tpPrice, setTpPrice]             = useState('');
+  const [limitPrice, setLimitPrice]       = useState('');
+  const [stopPriceIn, setStopPriceIn]     = useState('');
 
-  // VFX
-  const [coinRain, setCoinRain] = useState([]);
-  const [floatingTexts, setFloatingTexts] = useState([]);
-  const [critHit, setCritHit] = useState(null);
-  const [screenShake, setScreenShake] = useState(false);
-  const [borderPulse, setBorderPulse] = useState(null);
+  // ── PHASE ────────────────────────────────────────────────────────────────
+  // 'playing' | 'gameOver' | 'continue' | 'powerup' | 'sessionOver'
+  const [phase, setPhase]               = useState('playing');
+  const [continueCountdown, setContinueCd] = useState(10);
 
-  // Power-ups
-  const [showPowerup, setShowPowerup] = useState(false);
-  const [powerupOptions, setPowerupOptions] = useState([]);
-  const [activeEffects, setActiveEffects] = useState({
-    ironShield: false, doubleXP: 0, sniperMode: false, fastForward: false,
-  });
-  const [sniperPredictions, setSniperPredictions] = useState([]);
+  // ── VFX ──────────────────────────────────────────────────────────────────
+  const [coinRain, setCoinRain]       = useState([]);
+  const [skullRain, setSkullRain]     = useState([]);
+  const [floats, setFloats]           = useState([]);
+  const [critHit, setCritHit]         = useState(null);
+  const [shaking, setShaking]         = useState(false);
+  const [borderMode, setBorderMode]   = useState('none'); // none|green|danger|fire
 
-  // Quests
-  const [quests, setQuests] = useState(QUESTS_TEMPLATE.map(q => ({ ...q, progress: 0, completed: false })));
+  // ── POWER-UPS ────────────────────────────────────────────────────────────
+  const [puOptions, setPuOptions] = useState([]);
+  const [effects, setEffects]     = useState({ ironShield: false, doubleXP: 0, sniperMode: false, fastForward: false });
+  const [sniperPreds, setSniperPreds] = useState([]);
 
-  // ── DERIVED ──
-  const candles = candlesByAsset[selectedAsset] || [];
-  const currentPrice = candles.length ? candles[candles.length - 1].close : ASSETS[selectedAsset].basePrice;
-  const livesDisplayed = Math.max(0, Math.ceil(lives));
-  const levelInfo = getLevelInfo(xp);
-  const multiplier = winStreak >= 5 ? 5 : winStreak >= 3 ? 3 : winStreak >= 2 ? 2 : 1;
+  // ── QUESTS ───────────────────────────────────────────────────────────────
+  const [quests, setQuests] = useState(QUESTS_TPL.map(q => ({ ...q, progress: 0, done: false })));
+
+  // ── DERIVED ──────────────────────────────────────────────────────────────
+  const candles      = candleMap[asset] || [];
+  const currentPrice = candles.length ? candles[candles.length - 1].close : ASSETS[asset].basePrice;
+  const levelInfo    = getLevelInfo(xp);
+  const multiplier   = streak >= 5 ? 5 : streak >= 3 ? 3 : streak >= 2 ? 2 : 1;
+  const onFire       = streak >= 5;
   const totalOpenPnl = positions.reduce((s, p) => s + calcPnl(p, currentPrice), 0);
 
-  // ── CANDLE INTERVAL ──
-  const startCandleInterval = useCallback(() => {
-    if (candleIntervalRef.current) clearInterval(candleIntervalRef.current);
-    const speedMult = TIMEFRAME_SPEED[timeframe] || 1;
-    const ffMult = activeEffects.fastForward ? 0.5 : 1;
-    const ms = Math.floor(1500 * speedMult * ffMult);
-    candleIntervalRef.current = setInterval(() => {
-      setCandlesByAsset(prev => {
+  // ── CANDLE INTERVAL ──────────────────────────────────────────────────────
+  const startCandles = useCallback(() => {
+    if (candleIntRef.current) clearInterval(candleIntRef.current);
+    const ms = Math.floor(1500 * (TF_SPEED[tf] || 1) * (effects.fastForward ? .5 : 1));
+    candleIntRef.current = setInterval(() => {
+      setCandleMap(prev => {
         const next = {};
         for (const k of Object.keys(ASSETS)) {
           const arr = prev[k];
-          const nc = generateCandle(arr[arr.length - 1].close, k);
+          const nc = genCandle(arr[arr.length - 1].close, k);
           next[k] = [...arr.slice(-(MAX_CANDLES - 1)), nc];
         }
         return next;
       });
     }, ms);
-  }, [timeframe, activeEffects.fastForward]);
+  }, [tf, effects.fastForward]);
 
   useEffect(() => {
-    startCandleInterval();
-    return () => { if (candleIntervalRef.current) clearInterval(candleIntervalRef.current); };
-  }, [startCandleInterval]);
+    startCandles();
+    return () => { if (candleIntRef.current) clearInterval(candleIntRef.current); };
+  }, [startCandles]);
 
-  // ── CHECK SL/TP ON EACH NEW CANDLE ──
+  // ── SL/TP CHECK on each new candle ───────────────────────────────────────
   useEffect(() => {
     if (!positions.length) return;
-    const newCandle = candles[candles.length - 1];
-    if (!newCandle) return;
-
-    setPositions(prev => {
-      let toRemove = [];
-      const updated = prev.map(pos => {
-        if (pos.asset !== selectedAsset) return pos;
-        const pnl = calcPnl(pos, newCandle.close);
-        const slHit = pos.sl && (
-          (pos.direction === 'LONG' && newCandle.low <= pos.sl) ||
-          (pos.direction === 'SHORT' && newCandle.high >= pos.sl)
-        );
-        const tpHit = pos.tp && (
-          (pos.direction === 'LONG' && newCandle.high >= pos.tp) ||
-          (pos.direction === 'SHORT' && newCandle.low <= pos.tp)
-        );
-        if (slHit) { toRemove.push({ pos, exitPrice: pos.sl, reason: 'SL' }); return null; }
-        if (tpHit) { toRemove.push({ pos, exitPrice: pos.tp, reason: 'TP' }); return null; }
-        return { ...pos, currentPnl: pnl };
-      }).filter(Boolean);
-
-      toRemove.forEach(({ pos, exitPrice, reason }) => {
-        resolvePosition(pos, exitPrice, reason);
-      });
-
-      return updated;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const nc = candles[candles.length - 1];
+    if (!nc) return;
+    const toResolve = [];
+    const updated = positions.map(pos => {
+      if (pos.asset !== asset) return pos;
+      const slHit = pos.sl && ((pos.direction === 'LONG' && nc.low <= pos.sl) || (pos.direction === 'SHORT' && nc.high >= pos.sl));
+      const tpHit = pos.tp && ((pos.direction === 'LONG' && nc.high >= pos.tp) || (pos.direction === 'SHORT' && nc.low <= pos.tp));
+      if (slHit) { toResolve.push({ pos, exitPrice: pos.sl, reason: 'SL' }); return null; }
+      if (tpHit) { toResolve.push({ pos, exitPrice: pos.tp, reason: 'TP' }); return null; }
+      return { ...pos, currentPnl: calcPnl(pos, nc.close) };
+    }).filter(Boolean);
+    if (toResolve.length) {
+      setPositions(updated);
+      toResolve.forEach(({ pos, exitPrice, reason }) => resolvePosition(pos, exitPrice, reason));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
 
-  // ── BORDER PULSE CHECK ──
+  // ── BORDER + COIN RAIN (continuous while in profit) ──────────────────────
   useEffect(() => {
-    if (!positions.length) { setBorderPulse(null); return; }
+    if (coinIntRef.current) clearInterval(coinIntRef.current);
+    if (!positions.length) { setBorderMode('none'); setCoinRain([]); return; }
+
     const nearSl = positions.some(p => {
       if (!p.sl) return false;
-      return Math.abs(currentPrice - p.sl) / currentPrice < 0.005;
+      const dist = Math.abs(currentPrice - p.sl);
+      const range = Math.abs(p.entry - p.sl);
+      return range > 0 && dist / range < .3;
     });
-    if (nearSl) {
-      setBorderPulse('danger');
-      playSound(audioCtxRef, 'danger');
-    } else if (totalOpenPnl > 0) {
-      setBorderPulse('profit');
-    } else {
-      setBorderPulse(null);
-    }
-  }, [currentPrice, positions]);
 
-  // ── COMBO COUNTER ──
-  useEffect(() => {
-    if (comboTimerRef.current) clearInterval(comboTimerRef.current);
-    if (positions.length > 0) {
-      comboTimerRef.current = setInterval(() => {
-        const p = positions.reduce((s, pos) => s + calcPnl(pos, currentPrice), 0);
-        if (p > 0) setComboCount(c => c + 1);
-      }, 10000);
+    if (onFire) {
+      setBorderMode('fire');
+    } else if (nearSl) {
+      setBorderMode('danger');
+      playSound(audioRef, 'danger');
+    } else if (totalOpenPnl > 0) {
+      setBorderMode('green');
     } else {
-      setComboCount(0);
+      setBorderMode('none');
     }
-    return () => { if (comboTimerRef.current) clearInterval(comboTimerRef.current); };
+
+    // Continuous coin drizzle while in profit
+    if (totalOpenPnl > 0) {
+      const intensity = totalOpenPnl > 300 ? 3 : totalOpenPnl > 50 ? 2 : 1;
+      const spawnCoins = () => {
+        const count = intensity === 3 ? 6 : intensity === 2 ? 3 : 1;
+        const batch = Array.from({ length: count }, () => ({
+          id: Date.now() + Math.random(),
+          x: Math.random() * 95,
+          delay: Math.random() * .3,
+          dur: 1.4 + Math.random() * .8,
+        }));
+        setCoinRain(prev => [...prev.slice(-40), ...batch]);
+        setTimeout(() => setCoinRain(prev => prev.filter(c => !batch.find(b => b.id === c.id))), 3000);
+      };
+      spawnCoins();
+      coinIntRef.current = setInterval(spawnCoins, 1800);
+    } else {
+      setCoinRain([]);
+    }
+    return () => { if (coinIntRef.current) clearInterval(coinIntRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions.length, Math.round(totalOpenPnl), onFire]);
+
+  // ── COMBO COUNTER ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (comboIntRef.current) clearInterval(comboIntRef.current);
+    if (!positions.length) { setCombo(0); return; }
+    comboIntRef.current = setInterval(() => {
+      if (positions.reduce((s, p) => s + calcPnl(p, currentPrice), 0) > 0) {
+        setCombo(c => c + 1);
+      }
+    }, 10000);
+    return () => { if (comboIntRef.current) clearInterval(comboIntRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions.length]);
 
-  // ── POSITION RESOLUTION ──
+  // ── CONTINUE COUNTDOWN ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'continue') return;
+    if (continueIntRef.current) clearInterval(continueIntRef.current);
+    setContinueCd(10);
+    continueIntRef.current = setInterval(() => {
+      setContinueCd(c => {
+        if (c <= 1) {
+          clearInterval(continueIntRef.current);
+          setPhase('sessionOver');
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(continueIntRef.current);
+  }, [phase]);
+
+  // ── POSITION RESOLUTION ──────────────────────────────────────────────────
   function resolvePosition(pos, exitPrice, reason) {
-    const pnl = calcPnl(pos, exitPrice);
-    const isWin = pnl > 0;
-    const isTp = reason === 'TP';
-    const isSl = reason === 'SL';
-    const is2R = pos.sl
-      ? Math.abs(pnl) >= Math.abs(exitPrice - pos.sl) * pos.quantity * 2
-      : false;
+    const pnl    = calcPnl(pos, exitPrice);
+    const isWin  = pnl > 0;
+    const isTp   = reason === 'TP';
+    const isSl   = reason === 'SL';
+    const is2R   = pos.sl ? Math.abs(pnl) >= Math.abs(exitPrice - pos.sl) * pos.quantity * 2 : false;
 
     // XP
-    let xpGain = isWin ? 15 : 5;
-    if (isTp) xpGain = 25;
-    setActiveEffects(eff => {
-      const actualXp = eff.doubleXP > 0 ? xpGain * 2 : xpGain;
-      setXp(prev => {
-        const newXp = prev + actualXp;
-        if (getLevelInfo(newXp).level !== getLevelInfo(prev).level) {
-          playSound(audioCtxRef, 'levelUp');
-          spawnFloater('LEVEL UP! ⬆', '#ffe600');
-        }
-        return newXp;
-      });
-      return eff.doubleXP > 0 ? { ...eff, doubleXP: eff.doubleXP - 1 } : eff;
+    const baseXp = isTp ? 25 : isWin ? 15 : 5;
+    const xpGain = effects.doubleXP > 0 ? baseXp * 2 : baseXp;
+    setXp(prev => {
+      const nw = prev + xpGain;
+      if (getLevelInfo(nw).level !== getLevelInfo(prev).level) {
+        playSound(audioRef, 'lvlUp');
+        spawn('LEVEL UP! ⬆', '#ffe600');
+      }
+      return nw;
     });
+    if (effects.doubleXP > 0) setEffects(e => ({ ...e, doubleXP: e.doubleXP - 1 }));
 
-    // Balance + daily P&L
+    // Balance
     setBalance(b => b + pnl);
     setDailyPnl(d => d + pnl);
 
+    // Session stats
+    if (isWin) {
+      setStatWins(w => w + 1);
+      setStreak(s => {
+        const ns = s + 1;
+        setStatMaxStreak(m => Math.max(m, ns));
+        return ns;
+      });
+    } else {
+      setStatLoss(l => l + 1);
+      setStreak(0);
+      setCombo(0);
+    }
+    setStatBest(b  => b  == null ? pnl : Math.max(b, pnl));
+    setStatWorst(w => w  == null ? pnl : Math.min(w, pnl));
+
     // Lives
     if (isSl) {
-      setActiveEffects(eff => {
-        if (eff.ironShield) {
-          spawnFloater('SHIELD BLOCKED SL!', '#00eaff');
-          return { ...eff, ironShield: false };
-        }
+      if (effects.ironShield) {
+        setEffects(e => ({ ...e, ironShield: false }));
+        spawn('SHIELD BLOCKED SL!', '#00eaff');
+        playSound(audioRef, 'power');
+      } else {
         setLives(l => {
-          const nxt = l - 1;
-          playSound(audioCtxRef, 'stopHit');
+          const nl = l - 1;
+          playSound(audioRef, 'slHit');
           triggerShake();
-          spawnFloater('-1 LIFE!', '#ff2d78');
-          if (nxt <= 0) {
-            setTimeout(doGameOver, 200);
+          triggerSkullRain();
+          spawn('-1 LIFE!', '#ff2d78');
+          if (nl <= 0) {
+            setTimeout(() => setPhase('gameOver'), 200);
           } else {
-            setTimeout(doOfferPowerup, 600);
+            setTimeout(() => offerPowerup(), 800);
           }
-          return nxt;
+          return Math.max(0, nl);
         });
-        return eff;
-      });
-    } else if (isTp) {
-      setLives(l => Math.min(5, l + 0.5));
-      playSound(audioCtxRef, 'criticalHit');
-      setCritHit(pnl);
-      setTimeout(() => setCritHit(null), 2200);
-      spawnCoins(pnl);
-    } else if (isWin) {
-      if (is2R) {
-        setLives(l => Math.min(5, l + 1));
-        spawnFloater('+1 LIFE!', '#00ff88');
       }
-      spawnCoins(pnl);
-      playSound(audioCtxRef, 'coin');
+    }
+    if (isTp) {
+      setLives(l => Math.min(3, l + .5));
+      playSound(audioRef, 'crit');
+      setCritHit(pnl);
+      setTimeout(() => setCritHit(null), 2400);
+      burstCoins(pnl);
+    } else if (isWin) {
+      if (is2R) { setLives(l => Math.min(3, l + 1)); spawn('+1 LIFE!', '#00ff88'); }
+      playSound(audioRef, 'coin');
     }
 
-    // Win streak
-    if (isWin) setWinStreak(s => s + 1);
-    else setWinStreak(0);
-
-    // Trade history
-    const entry = {
+    // History
+    setTradeHistory(prev => [{
       id: Date.now() + Math.random(),
       asset: pos.asset,
       direction: pos.direction,
       entry: pos.entry,
       exit: exitPrice,
       pnl,
-      grade: calcGrade(pnl),
+      reason,
       orderType: pos.orderType,
-    };
-    setTradeHistory(prev => [entry, ...prev].slice(0, 10));
+    }, ...prev].slice(0, 10));
 
-    // Floating P&L
-    spawnFloater((pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2), pnl >= 0 ? '#00ff88' : '#ff2d78');
-
-    // Quests
-    updateQuestProgress(isWin, pnl, pos.orderType === 'Stop');
+    spawn(fmtPnl(pnl), pnl >= 0 ? '#00ff88' : '#ff2d78');
+    updateQuests(isWin, pnl, pos.orderType === 'Stop');
   }
 
-  function updateQuestProgress(isWin, pnl, isStop) {
+  function updateQuests(isWin, pnl, isStop) {
     setQuests(prev => prev.map(q => {
-      if (q.completed) return q;
+      if (q.done) return q;
       let delta = 0;
-      if (q.type === 'wins' && isWin) delta = 1;
-      if (q.type === 'profit' && pnl > 0) delta = pnl;
+      if (q.type === 'wins'      && isWin)  delta = 1;
+      if (q.type === 'profit'    && pnl > 0) delta = pnl;
       if (q.type === 'stopOrder' && isStop) delta = 1;
-      if (delta === 0) return q;
+      if (!delta) return q;
       const np = Math.min(q.target, q.progress + delta);
-      const completed = np >= q.target;
-      if (completed && !q.completed) {
-        if (q.rewardType === 'XP') setXp(x => x + q.reward);
-        else { setBalance(b => b + q.reward); spawnFloater('+$' + q.reward + ' QUEST!', '#ffe600'); }
-        spawnFloater('QUEST DONE!', '#ffe600');
+      const done = np >= q.target;
+      if (done && !q.done) {
+        if (q.rt === 'XP') setXp(x => x + q.reward);
+        else { setBalance(b => b + q.reward); spawn('+$' + q.reward + ' QUEST!', '#ffe600'); }
+        spawn('✓ QUEST DONE!', '#ffe600');
       }
-      return { ...q, progress: np, completed };
+      return { ...q, progress: np, done };
     }));
   }
 
-  function doGameOver() {
-    setGameOver(true);
-    playSound(audioCtxRef, 'gameOver');
-    setGrade(dailyPnl >= 1000 ? 'A' : dailyPnl >= 500 ? 'B' : dailyPnl >= 0 ? 'C' : 'F');
-    let count = 10;
-    setTimeout(() => {
-      setContinueCountdown(count);
-      continueTimerRef.current = setInterval(() => {
-        count--;
-        setContinueCountdown(count);
-        if (count <= 0) {
-          clearInterval(continueTimerRef.current);
-          setSessionOver(true);
-          setContinueCountdown(null);
-        }
-      }, 1000);
-    }, 3000);
+  // ── VFX helpers ──────────────────────────────────────────────────────────
+  function triggerShake() {
+    setShaking(true); setTimeout(() => setShaking(false), 700);
+  }
+  function triggerSkullRain() {
+    const skulls = Array.from({ length: 16 }, () => ({
+      id: Date.now() + Math.random(),
+      x: Math.random() * 95,
+      delay: Math.random() * .6,
+      dur: 1.2 + Math.random() * .8,
+    }));
+    setSkullRain(skulls);
+    setTimeout(() => setSkullRain([]), 3500);
+  }
+  function spawn(text, color) {
+    const id = Date.now() + Math.random();
+    setFloats(prev => [...prev, { id, text, color, x: 30 + Math.random() * 40, y: 25 + Math.random() * 30 }]);
+    setTimeout(() => setFloats(prev => prev.filter(t => t.id !== id)), 1700);
+  }
+  function burstCoins(pnl) {
+    const count = pnl >= 400 ? 28 : pnl >= 100 ? 18 : 10;
+    const batch = Array.from({ length: count }, () => ({
+      id: Date.now() + Math.random(),
+      x: Math.random() * 95,
+      delay: Math.random() * .5,
+      dur: 1.3 + Math.random() * .9,
+    }));
+    setCoinRain(prev => [...prev, ...batch]);
+    setTimeout(() => setCoinRain(prev => prev.filter(c => !batch.find(b => b.id === c.id))), 4200);
   }
 
-  function doOfferPowerup() {
-    const shuffled = [...POWERUPS].sort(() => Math.random() - 0.5);
-    setPowerupOptions(shuffled.slice(0, 3));
-    setShowPowerup(true);
+  // ── POWER-UP ─────────────────────────────────────────────────────────────
+  function offerPowerup() {
+    const shuffled = [...POWERUPS].sort(() => Math.random() - .5);
+    setPuOptions(shuffled.slice(0, 3));
+    setPhase('powerup');
   }
-
   function selectPowerup(pu) {
-    setShowPowerup(false);
-    if (pu.id === 'iron_shield') {
-      setActiveEffects(e => ({ ...e, ironShield: true }));
-    } else if (pu.id === 'double_xp') {
-      setActiveEffects(e => ({ ...e, doubleXP: 5 }));
-    } else if (pu.id === 'sniper_mode') {
-      setActiveEffects(e => ({ ...e, sniperMode: true }));
-      const arr = candlesByAsset[selectedAsset];
+    setPhase('playing');
+    if (pu.id === 'iron_shield')  setEffects(e => ({ ...e, ironShield: true }));
+    else if (pu.id === 'double_xp')   setEffects(e => ({ ...e, doubleXP: 5 }));
+    else if (pu.id === 'sniper_mode') {
+      setEffects(e => ({ ...e, sniperMode: true }));
+      const arr = candleMap[asset];
       let p = arr[arr.length - 1].close;
       const preds = [];
       for (let i = 0; i < 3; i++) {
-        const nc = generateCandle(p, selectedAsset);
+        const nc = genCandle(p, asset);
         preds.push(nc.close >= nc.open ? 'UP' : 'DOWN');
         p = nc.close;
       }
-      setSniperPredictions(preds);
-      setTimeout(() => { setActiveEffects(e => ({ ...e, sniperMode: false })); setSniperPredictions([]); }, 12000);
-    } else if (pu.id === 'bonus_coins') {
-      setBalance(b => b + 500);
-      spawnFloater('+$500 BONUS!', '#ffe600');
-      playSound(audioCtxRef, 'coin');
-    } else if (pu.id === 'fast_forward') {
-      setActiveEffects(e => ({ ...e, fastForward: true }));
-      if (ffTimerRef.current) clearTimeout(ffTimerRef.current);
-      ffTimerRef.current = setTimeout(() => setActiveEffects(e => ({ ...e, fastForward: false })), 30000);
+      setSniperPreds(preds);
+      setTimeout(() => { setEffects(e => ({ ...e, sniperMode: false })); setSniperPreds([]); }, 12000);
     }
-    spawnFloater(pu.name + ' ACTIVE!', pu.color);
+    else if (pu.id === 'bonus_coins') {
+      setBalance(b => b + 500);
+      spawn('+$500 BONUS!', '#ffe600');
+      playSound(audioRef, 'coin');
+    }
+    else if (pu.id === 'fast_forward') {
+      setEffects(e => ({ ...e, fastForward: true }));
+      if (ffTimerRef.current) clearTimeout(ffTimerRef.current);
+      ffTimerRef.current = setTimeout(() => setEffects(e => ({ ...e, fastForward: false })), 30000);
+    }
+    spawn(pu.name + ' ACTIVE!', pu.color);
+    playSound(audioRef, 'power');
   }
 
-  function triggerShake() {
-    setScreenShake(true);
-    setTimeout(() => setScreenShake(false), 700);
-  }
-
-  function spawnFloater(text, color) {
-    const id = Date.now() + Math.random();
-    const x = 35 + Math.random() * 30;
-    const y = 30 + Math.random() * 30;
-    setFloatingTexts(prev => [...prev, { id, text, color, x, y }]);
-    setTimeout(() => setFloatingTexts(prev => prev.filter(t => t.id !== id)), 1600);
-  }
-
-  function spawnCoins(pnl) {
-    const count = pnl >= 500 ? 24 : pnl >= 100 ? 16 : 8;
-    const coins = Array.from({ length: count }, () => ({
-      id: Date.now() + Math.random(),
-      x: Math.random() * 95,
-      delay: Math.random() * 0.6,
-      dur: 1.4 + Math.random() * 0.8,
-    }));
-    setCoinRain(prev => [...prev, ...coins]);
-    setTimeout(() => setCoinRain(prev => prev.filter(c => !coins.find(n => n.id === c.id))), 4000);
-  }
-
-  // ── OPEN POSITION ──
+  // ── OPEN POSITION ─────────────────────────────────────────────────────────
   function openPosition() {
-    if (!audioCtxRef.current) audioCtxRef.current = createAudioCtx();
-    if (positions.length >= MAX_POSITIONS) { spawnFloater('MAX POSITIONS!', '#ff2d78'); return; }
+    if (!audioRef.current) audioRef.current = mkAudio();
+    if (positions.length >= MAX_POS) { spawn('MAX POSITIONS!', '#ff2d78'); return; }
     const qty = parseFloat(quantity);
-    if (isNaN(qty) || qty <= 0 || qty > 10) { spawnFloater('INVALID QTY', '#ff2d78'); return; }
-
+    if (isNaN(qty) || qty <= 0 || qty > 10) { spawn('INVALID QTY!', '#ff2d78'); return; }
     let entry = currentPrice;
-    if (orderType === 'Limit' && limitPrice) entry = parseFloat(limitPrice);
-    if (orderType === 'Stop' && stopPriceInput) entry = parseFloat(stopPriceInput);
+    if (orderType === 'Limit' && limitPrice)  entry = parseFloat(limitPrice);
+    if (orderType === 'Stop' && stopPriceIn)  entry = parseFloat(stopPriceIn);
     if (isNaN(entry)) return;
-
     const sl = slPrice ? parseFloat(slPrice) : null;
     const tp = tpPrice ? parseFloat(tpPrice) : null;
-
-    const pos = {
-      id: Date.now(),
-      asset: selectedAsset,
-      direction,
-      entry,
-      quantity: qty,
-      sl,
-      tp,
-      orderType,
-      currentPnl: 0,
-    };
-
-    setPositions(prev => [...prev, pos]);
-    playSound(audioCtxRef, 'fill');
-    spawnFloater('ORDER FILLED!', '#00eaff');
-    setSlPrice(''); setTpPrice(''); setLimitPrice(''); setStopPriceInput('');
+    setPositions(prev => [...prev, { id: Date.now(), asset, direction, entry, quantity: qty, sl, tp, orderType, currentPnl: 0 }]);
+    playSound(audioRef, 'fill');
+    spawn('ORDER FILLED!', '#00eaff');
+    setSlPrice(''); setTpPrice(''); setLimitPrice(''); setStopPriceIn('');
   }
 
-  function closePositionManual(posId) {
+  function closeManual(posId) {
     const pos = positions.find(p => p.id === posId);
     if (!pos) return;
     resolvePosition(pos, currentPrice, 'Manual');
     setPositions(prev => prev.filter(p => p.id !== posId));
   }
 
-  function restartGame() {
-    if (continueTimerRef.current) clearInterval(continueTimerRef.current);
-    setBalance(INITIAL_BALANCE);
-    setDailyPnl(0);
-    setLives(3);
-    setXp(0);
-    setPositions([]);
-    setTradeHistory([]);
-    setWinStreak(0);
-    setComboCount(0);
-    setGameOver(false);
-    setContinueCountdown(null);
-    setSessionOver(false);
-    setActiveEffects({ ironShield: false, doubleXP: 0, sniperMode: false, fastForward: false });
-    setQuests(QUESTS_TEMPLATE.map(q => ({ ...q, progress: 0, completed: false })));
-    setCandlesByAsset(() => {
-      const o = {};
-      for (const k of Object.keys(ASSETS)) o[k] = generateInitialCandles(k);
-      return o;
-    });
+  // ── RESTART ───────────────────────────────────────────────────────────────
+  function restart() {
+    clearInterval(continueIntRef.current);
+    setBalance(INIT_BAL); setDailyPnl(0); setLives(3); setXp(0);
+    setPositions([]); setTradeHistory([]); setStreak(0); setCombo(0);
+    setStatWins(0); setStatLoss(0); setStatBest(null); setStatWorst(null); setStatMaxStreak(0);
+    setPhase('playing'); setCoinRain([]); setSkullRain([]); setShaking(false); setBorderMode('none');
+    setEffects({ ironShield: false, doubleXP: 0, sniperMode: false, fastForward: false });
+    setQuests(QUESTS_TPL.map(q => ({ ...q, progress: 0, done: false })));
+    setCandleMap(() => { const o = {}; for (const k of Object.keys(ASSETS)) o[k] = genInitCandles(k); return o; });
   }
 
-  // ── SVG CHART ──
-  const CHART_H = 380;
-  const CHART_VW = 720;
-  const PAD = { top: 24, right: 64, bottom: 8, left: 8 };
+  // ── VOLUME DATA ───────────────────────────────────────────────────────────
+  const volData = useMemo(() => candles.slice(-60).map((c, i) => ({
+    i, v: c.volume, up: c.close >= c.open,
+  })), [candles]);
 
-  function renderCandleChart() {
-    const vis = candles.slice(-80);
-    if (!vis.length) return null;
-    const prices = vis.flatMap(c => [c.high, c.low]);
-    let minP = Math.min(...prices);
-    let maxP = Math.max(...prices);
-    const range = maxP - minP || minP * 0.01 || 1;
-    minP -= range * 0.05;
-    maxP += range * 0.05;
-    const adjRange = maxP - minP;
-
-    const w = CHART_VW - PAD.left - PAD.right;
-    const h = CHART_H - PAD.top - PAD.bottom;
-    const cw = Math.max(2, w / vis.length - 1);
-
-    const toY = (p) => PAD.top + (1 - (p - minP) / adjRange) * h;
-    const toX = (i) => PAD.left + (i + 0.5) * (w / vis.length);
-
-    // Grid
-    const gridEls = [];
-    for (let i = 0; i <= 5; i++) {
-      const p = minP + (adjRange * i) / 5;
-      const y = toY(p);
-      const lbl = p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
-      gridEls.push(
-        <g key={'g' + i}>
-          <line x1={PAD.left} y1={y} x2={CHART_VW - PAD.right} y2={y} stroke="#151530" strokeWidth="1" />
-          <text x={CHART_VW - PAD.right + 4} y={y + 4} fill="#334466" fontSize="9" fontFamily="VT323,monospace">{lbl}</text>
-        </g>
-      );
-    }
-
-    // Candles
-    const candleEls = vis.map((c, i) => {
-      const green = c.close >= c.open;
-      const col = green ? '#00ff88' : '#ff2d78';
-      const cx = Math.round(toX(i));
-      const bTop = toY(Math.max(c.open, c.close));
-      const bBot = toY(Math.min(c.open, c.close));
-      const bH = Math.max(1, bBot - bTop);
-      return (
-        <g key={i}>
-          <line x1={cx} y1={toY(c.high)} x2={cx} y2={toY(c.low)} stroke={col} strokeWidth="1" opacity="0.65" />
-          <rect x={cx - cw / 2} y={bTop} width={cw} height={bH} fill={col} opacity="0.92" rx="0.5" />
-        </g>
-      );
-    });
-
-    // SL / TP lines
-    const slTpEls = positions
-      .filter(p => p.asset === selectedAsset)
-      .flatMap(p => {
-        const out = [];
-        if (p.sl) {
-          const y = toY(p.sl);
-          if (y > PAD.top && y < PAD.top + h) {
-            out.push(
-              <g key={'sl' + p.id}>
-                <line x1={PAD.left} y1={y} x2={CHART_VW - PAD.right} y2={y} stroke="#ff2d78" strokeWidth="1.5" strokeDasharray="5,3" />
-                <rect x={PAD.left} y={y - 9} width={18} height={12} fill="#ff2d7833" rx="1" />
-                <text x={PAD.left + 2} y={y + 1} fill="#ff2d78" fontSize="9" fontFamily="VT323,monospace">SL</text>
-              </g>
-            );
-          }
-        }
-        if (p.tp) {
-          const y = toY(p.tp);
-          if (y > PAD.top && y < PAD.top + h) {
-            out.push(
-              <g key={'tp' + p.id}>
-                <line x1={PAD.left} y1={y} x2={CHART_VW - PAD.right} y2={y} stroke="#00ff88" strokeWidth="1.5" strokeDasharray="5,3" />
-                <rect x={PAD.left} y={y - 9} width={18} height={12} fill="#00ff8833" rx="1" />
-                <text x={PAD.left + 2} y={y + 1} fill="#00ff88" fontSize="9" fontFamily="VT323,monospace">TP</text>
-              </g>
-            );
-          }
-        }
-        return out;
-      });
-
-    // Current price line
-    const cpY = toY(currentPrice);
-    const cpLbl = fmtPrice(currentPrice);
-
-    return (
-      <svg viewBox={`0 0 ${CHART_VW} ${CHART_H}`} style={{ width: '100%', height: '100%' }} preserveAspectRatio="none">
-        <rect width={CHART_VW} height={CHART_H} fill="#040410" />
-        {gridEls}
-        {slTpEls}
-        {candleEls}
-        {/* Current price dashed */}
-        <line x1={PAD.left} y1={cpY} x2={CHART_VW - PAD.right} y2={cpY} stroke="#ffe600" strokeWidth="1" strokeDasharray="7,4" opacity="0.85" />
-        <rect x={CHART_VW - PAD.right + 2} y={cpY - 9} width={PAD.right - 4} height={18} fill="#ffe600" rx="2" />
-        <text x={CHART_VW - PAD.right + 4} y={cpY + 5} fill="#000" fontSize="9" fontFamily="VT323,monospace" fontWeight="bold">{cpLbl}</text>
-      </svg>
-    );
-  }
-
-  // Volume data for Recharts
-  const volumeData = candles.slice(-50).map((c, i) => ({
-    i,
-    v: c.volume,
-    fill: c.close >= c.open ? '#00ff8855' : '#ff2d7855',
-  }));
-
-  // Pixel button style helper
+  // ── STYLE HELPERS ─────────────────────────────────────────────────────────
   const pxBtn = (active, col = '#00ff88', extra = {}) => ({
     background: active ? col + '1a' : 'transparent',
     border: `2px solid ${active ? col : '#1e2a3a'}`,
     color: active ? col : '#445566',
     fontFamily: "'Press Start 2P', monospace",
-    fontSize: '8px',
-    padding: '5px 8px',
+    fontSize: '8px', padding: '5px 8px',
     cursor: 'pointer',
     boxShadow: active ? `0 0 10px ${col}44, inset 0 0 8px ${col}11` : 'none',
-    transition: 'all 0.12s',
-    ...extra,
+    transition: 'all .12s', ...extra,
   });
-
-  const sectionHdr = (col = '#00eaff') => ({
-    fontFamily: "'Press Start 2P', monospace",
-    fontSize: '7px',
-    color: col,
-    textShadow: `0 0 8px ${col}88`,
-    borderBottom: `1px solid ${col}33`,
-    paddingBottom: '4px',
-    marginBottom: '6px',
-    letterSpacing: '0.5px',
+  const secHdr = (col = '#00eaff') => ({
+    fontFamily: "'Press Start 2P', monospace", fontSize: '7px',
+    color: col, textShadow: `0 0 8px ${col}88`,
+    borderBottom: `1px solid ${col}33`, paddingBottom: '4px', marginBottom: '6px', letterSpacing: '.5px',
   });
-
-  const inputStyle = {
-    background: '#070714',
-    border: '1px solid #252550',
-    color: '#00eaff',
-    fontFamily: "'VT323', monospace",
-    fontSize: '16px',
-    padding: '4px 7px',
-    width: '100%',
-    outline: 'none',
-    borderRadius: '1px',
+  const inpStyle = {
+    background: '#070714', border: '1px solid #252550', color: '#00eaff',
+    fontFamily: "'VT323', monospace", fontSize: '16px',
+    padding: '4px 7px', width: '100%', outline: 'none', borderRadius: '1px',
   };
 
-  const cardStyle = {
-    background: '#0c0c22',
-    border: '1px solid #1a1a40',
-    borderRadius: '2px',
-    padding: '8px',
-    marginBottom: '6px',
-  };
+  // Main wrapper animation — only one at a time
+  const wrapAnim = shaking ? 'screenShake .7s ease'
+    : borderMode === 'green'  ? 'borderGreen 1.2s infinite'
+    : borderMode === 'danger' ? 'borderDanger .55s infinite'
+    : borderMode === 'fire'   ? 'borderFire 1s infinite'
+    : 'none';
 
-  // ─── CSS KEYFRAMES ─────────────────────────────────────────────────────────
-  const css = `
-    @keyframes coinFall {
-      0%   { transform: translateY(-30px) rotate(0deg) scale(1); opacity:1; }
-      80%  { opacity: 0.7; }
-      100% { transform: translateY(105vh) rotate(800deg) scale(0.5); opacity:0; }
-    }
-    @keyframes screenShake {
-      0%,100%{transform:translate(0,0)}
-      10%{transform:translate(-5px,-3px)}
-      20%{transform:translate(5px,3px)}
-      30%{transform:translate(-4px,4px)}
-      40%{transform:translate(4px,-4px)}
-      50%{transform:translate(-3px,5px)}
-      60%{transform:translate(3px,-3px)}
-      70%{transform:translate(-5px,2px)}
-      80%{transform:translate(5px,-2px)}
-      90%{transform:translate(-2px,4px)}
-    }
-    @keyframes floatUp {
-      0%   { transform:translateY(0) scale(1); opacity:1; }
-      60%  { opacity:0.8; }
-      100% { transform:translateY(-90px) scale(0.85); opacity:0; }
-    }
-    @keyframes slam {
-      0%   { transform:scale(3.5) translateY(-20px); opacity:0; }
-      35%  { transform:scale(1.15) translateY(0); opacity:1; }
-      70%  { transform:scale(0.95); }
-      100% { transform:scale(1); opacity:1; }
-    }
-    @keyframes blink {
-      0%,100%{opacity:1} 50%{opacity:0}
-    }
-    @keyframes borderPulseProfit {
-      0%,100%{box-shadow:0 0 0 2px #00ff88,0 0 20px #00ff8844}
-      50%{box-shadow:0 0 0 4px #00ff88,0 0 50px #00ff8866}
-    }
-    @keyframes borderPulseDanger {
-      0%,100%{box-shadow:0 0 0 2px #ff2d78,0 0 20px #ff2d7844}
-      50%{box-shadow:0 0 0 5px #ff2d78,0 0 50px #ff2d7888}
-    }
-    @keyframes scanline {
-      0%{transform:translateY(-100%)}
-      100%{transform:translateY(120vh)}
-    }
-    @keyframes powerupPop {
-      0%{transform:scale(0) rotate(-8deg);opacity:0}
-      55%{transform:scale(1.08) rotate(2deg);opacity:1}
-      100%{transform:scale(1) rotate(0);opacity:1}
-    }
-    @keyframes countdownPop {
-      0%,100%{transform:scale(1)}
-      50%{transform:scale(1.2)}
-    }
-    @keyframes neonFlicker {
-      0%,19%,21%,23%,25%,54%,56%,100%{opacity:1}
-      20%,22%,24%,55%{opacity:0.4}
-    }
-    @keyframes glitch {
-      0%,100%{clip-path:inset(0 0 98% 0);transform:translate(0)}
-      12%{clip-path:inset(15% 0 70% 0);transform:translate(-3px,1px)}
-      28%{clip-path:inset(55% 0 25% 0);transform:translate(3px,-2px)}
-      45%{clip-path:inset(75% 0 5% 0);transform:translate(-2px,3px)}
-    }
-  `;
+  // Session over stats
+  const totalTrades = statWins + statLoss;
+  const winRate = totalTrades > 0 ? Math.round((statWins / totalTrades) * 100) : 0;
+  const endGrade = sessionGrade(dailyPnl, winRate);
 
-  // ─── RENDER ────────────────────────────────────────────────────────────────
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#0a0a1a',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: "'VT323', monospace",
-        color: '#c0c0d0',
-        overflow: 'hidden',
-        animation: screenShake ? 'screenShake 0.7s ease' : 'none',
-        animation: borderPulse === 'profit'
-          ? 'borderPulseProfit 1.2s infinite'
-          : borderPulse === 'danger'
-          ? 'borderPulseDanger 0.55s infinite'
-          : screenShake ? 'screenShake 0.7s ease' : 'none',
+        width: '100vw', height: '100vh', background: '#0a0a1a',
+        display: 'flex', flexDirection: 'column',
+        fontFamily: "'VT323', monospace", color: '#c0c0d0',
+        overflow: 'hidden', animation: wrapAnim,
       }}
-      onClick={() => { if (!audioCtxRef.current) audioCtxRef.current = createAudioCtx(); }}
+      onClick={() => { if (!audioRef.current) audioRef.current = mkAudio(); }}
     >
-      <style>{css}</style>
 
       {/* ── COIN RAIN ── */}
       {coinRain.map(c => (
         <div key={c.id} style={{
           position: 'fixed', left: c.x + 'vw', top: 0, zIndex: 9999,
-          fontSize: '22px', pointerEvents: 'none',
+          fontSize: '20px', pointerEvents: 'none',
           animation: `coinFall ${c.dur}s ${c.delay}s linear forwards`,
         }}>💰</div>
       ))}
 
+      {/* ── SKULL RAIN ── */}
+      {skullRain.map(s => (
+        <div key={s.id} style={{
+          position: 'fixed', left: s.x + 'vw', top: 0, zIndex: 9999,
+          fontSize: '22px', pointerEvents: 'none',
+          animation: `skullFall ${s.dur}s ${s.delay}s linear forwards`,
+        }}>💀</div>
+      ))}
+
       {/* ── FLOATING TEXTS ── */}
-      {floatingTexts.map(ft => (
+      {floats.map(ft => (
         <div key={ft.id} style={{
           position: 'fixed', left: ft.x + '%', top: ft.y + '%',
           color: ft.color, fontFamily: "'Press Start 2P', monospace", fontSize: '13px',
           textShadow: `0 0 12px ${ft.color}`,
-          animation: 'floatUp 1.6s ease-out forwards',
+          animation: 'floatUp 1.7s ease-out forwards',
           zIndex: 9998, pointerEvents: 'none', whiteSpace: 'nowrap',
         }}>{ft.text}</div>
       ))}
@@ -832,109 +841,189 @@ export default function App() {
       {/* ── CRITICAL HIT ── */}
       {critHit !== null && (
         <div style={{
-          position: 'fixed', top: '28%', left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed', top: '26%', left: '50%',
           zIndex: 9997, textAlign: 'center', pointerEvents: 'none',
-          animation: 'slam 0.5s ease-out forwards',
+          animation: 'critSlam .5s ease-out forwards',
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '30px', color: '#ffe600', textShadow: '0 0 25px #ffe600, 0 0 50px #ff7700' }}>
-            CRITICAL HIT!
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '28px', color: '#ffe600', textShadow: '0 0 25px #ffe600, 0 0 50px #ff770066', lineHeight: 1.3 }}>
+            ⭐ CRITICAL HIT! ⭐
           </div>
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '22px', color: '#00ff88', textShadow: '0 0 15px #00ff88', marginTop: '10px' }}>
             +${Math.abs(critHit).toFixed(2)}
           </div>
+          <div style={{ fontSize: '28px', marginTop: '8px' }}>🎉💥🎉</div>
         </div>
       )}
 
-      {/* ── GAME OVER ── */}
-      {gameOver && (
+      {/* ── DANGER ZONE BADGE ── */}
+      {borderMode === 'danger' && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)',
+          position: 'fixed', top: '80px', right: '20px', zIndex: 9990,
+          fontFamily: "'Press Start 2P', monospace", fontSize: '8px',
+          color: '#ff2d78', border: '2px solid #ff2d78', padding: '6px 12px',
+          background: '#ff2d7811', boxShadow: '0 0 15px #ff2d7855',
+          animation: 'dangerPulse .5s infinite',
+        }}>⚠ DANGER ZONE ⚠</div>
+      )}
+
+      {/* ── GAME OVER OVERLAY ── */}
+      {phase === 'gameOver' && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.9)',
           zIndex: 10000, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: '22px',
+          alignItems: 'center', justifyContent: 'center', gap: '18px',
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '52px', color: '#ff2d78', textShadow: '0 0 30px #ff2d78, 0 0 60px #ff004477', animation: 'blink 1.1s infinite' }}>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '52px', color: '#ff2d78', textShadow: '0 0 30px #ff2d78, 0 0 60px #ff004477', animation: 'slam .6s ease-out forwards, blink 1.2s .7s infinite' }}>
             GAME OVER
           </div>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '22px', color: '#ffe600', textShadow: '0 0 15px #ffe600' }}>
-            GRADE: {grade}
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '14px', color: '#ff6666' }}>
+            ALL LIVES LOST
           </div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: '26px', color: '#00eaff' }}>
-            DAILY P&L: {fmtPnl(dailyPnl)}
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: '24px', color: '#7788aa' }}>
+            Loading stats…
           </div>
-          {continueCountdown !== null && (
-            <>
-              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '15px', color: '#00ff88', animation: 'countdownPop 1s infinite' }}>
-                CONTINUE? {continueCountdown}s
-              </div>
-              <button
-                style={{ ...pxBtn(true, '#00ff88'), fontSize: '13px', padding: '12px 24px', marginTop: '6px' }}
-                onClick={restartGame}
-              >
-                YES! CONTINUE
-              </button>
-            </>
-          )}
+          {/* Auto-advance to continue after 3s */}
+          {setTimeout(() => { if (phase === 'gameOver') setPhase('continue'); }, 3000) && null}
         </div>
       )}
 
-      {/* ── SESSION OVER ── */}
-      {sessionOver && (
+      {/* ── CONTINUE SCREEN ── */}
+      {phase === 'continue' && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)',
-          zIndex: 10001, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: '22px',
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.93)',
+          zIndex: 10000, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '16px',
+          fontFamily: "'Press Start 2P', monospace",
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '36px', color: '#ff2d78', textShadow: '0 0 20px #ff2d78' }}>
-            SESSION OVER
+          <div style={{ fontSize: '26px', color: '#ff2d78', animation: 'blink 1.1s infinite' }}>
+            CONTINUE?
           </div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: '28px', color: '#7788aa' }}>
-            Final P&L: {fmtPnl(dailyPnl)} | Grade: {grade}
+
+          <div style={{
+            border: '3px solid #ff2d78', padding: '24px 36px',
+            background: '#07071a', boxShadow: '0 0 40px #ff2d7844',
+            display: 'flex', flexDirection: 'column', gap: '12px', minWidth: '340px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#556677' }}>
+              <span>ACCOUNT BALANCE</span>
+              <span style={{ color: '#00ff88' }}>${balance.toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#556677' }}>
+              <span>TRADES TODAY</span>
+              <span style={{ color: '#ffe600' }}>{totalTrades}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#556677' }}>
+              <span>WIN RATE</span>
+              <span style={{ color: '#00eaff' }}>{winRate}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#556677' }}>
+              <span>DAILY P&L</span>
+              <span style={{ color: dailyPnl >= 0 ? '#00ff88' : '#ff2d78' }}>{fmtPnl(dailyPnl)}</span>
+            </div>
           </div>
-          <button style={{ ...pxBtn(true, '#ffe600'), fontSize: '14px', padding: '14px 28px' }} onClick={restartGame}>
-            PLAY AGAIN
-          </button>
+
+          <div style={{ fontSize: '40px', color: '#ff2d78', textShadow: '0 0 20px #ff2d78', animation: 'cdPop 1s infinite', minWidth: '60px', textAlign: 'center' }}>
+            {continueCountdown}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '340px' }}>
+            <button
+              onClick={offerPowerup}
+              style={{ ...pxBtn(true, '#00ff88'), fontSize: '11px', padding: '13px', width: '100%', animation: 'blink 1.5s infinite' }}
+            >
+              ▶ INSERT COIN / NEW TRADE
+            </button>
+            <button
+              onClick={() => setPhase('sessionOver')}
+              style={{ ...pxBtn(false, '#ff2d78'), fontSize: '9px', padding: '10px', width: '100%' }}
+            >
+              ✕ END SESSION
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── POWER-UP SELECTION ── */}
-      {showPowerup && (
+      {phase === 'powerup' && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
-          zIndex: 9990, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: '26px',
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)',
+          zIndex: 10001, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '24px',
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '20px', color: '#ffe600', textShadow: '0 0 15px #ffe600' }}>
-            CHOOSE YOUR POWER-UP
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '18px', color: '#ffe600', textShadow: '0 0 15px #ffe600' }}>
+            ⚡ CHOOSE YOUR POWER-UP ⚡
           </div>
-          <div style={{ display: 'flex', gap: '22px' }}>
-            {powerupOptions.map((pu, i) => (
-              <div
-                key={pu.id}
-                onClick={() => selectPowerup(pu)}
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {puOptions.map((pu, i) => (
+              <div key={pu.id} onClick={() => selectPowerup(pu)}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.07) translateY(-3px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 style={{
-                  width: '170px', padding: '18px 14px',
-                  background: '#0b0b22',
-                  border: `3px solid ${pu.color}`,
-                  borderRadius: '3px',
-                  cursor: 'pointer', textAlign: 'center',
+                  width: '165px', padding: '18px 14px',
+                  background: '#0b0b22', border: `3px solid ${pu.color}`,
+                  borderRadius: '3px', cursor: 'pointer', textAlign: 'center',
                   boxShadow: `0 0 24px ${pu.color}44, inset 0 0 20px ${pu.color}0a`,
-                  animation: `powerupPop 0.45s ${i * 0.1}s ease-out both`,
+                  animation: `powerPop .45s ${i * .1}s ease-out both`,
                   display: 'flex', flexDirection: 'column', gap: '10px',
-                  transition: 'transform 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.06) translateY(-2px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1) translateY(0)'}
-              >
-                <div style={{ fontSize: '40px', lineHeight: 1 }}>{pu.icon}</div>
-                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: pu.color, textShadow: `0 0 8px ${pu.color}`, lineHeight: 1.5 }}>
-                  {pu.name}
-                </div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: '16px', color: '#99aabb', lineHeight: 1.3 }}>
-                  {pu.desc}
-                </div>
+                  transition: 'transform .12s',
+                }}>
+                <div style={{ fontSize: '38px', lineHeight: 1 }}>{pu.icon}</div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: pu.color, letterSpacing: '.5px' }}>{pu.rarity}</div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: pu.color, textShadow: `0 0 8px ${pu.color}`, lineHeight: 1.5 }}>{pu.name}</div>
+                <div style={{ fontFamily: "'VT323', monospace", fontSize: '15px', color: '#99aabb', lineHeight: 1.3 }}>{pu.desc}</div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── SESSION OVER ── */}
+      {phase === 'sessionOver' && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.97)',
+          zIndex: 10002, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '18px',
+          fontFamily: "'Press Start 2P', monospace",
+        }}>
+          <div style={{ fontSize: '32px', color: '#ff2d78', textShadow: '0 0 20px #ff2d78', animation: 'neonFlicker 4s infinite' }}>
+            SESSION OVER
+          </div>
+          <div style={{ fontSize: '9px', color: '#334455', letterSpacing: '2px' }}>POST-BATTLE REPORT</div>
+
+          <div style={{
+            border: '2px solid #1a1a44', padding: '24px 32px',
+            background: '#0a0a20', boxShadow: '0 0 40px #ff2d7822',
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 30px',
+            fontSize: '9px', minWidth: '360px',
+          }}>
+            {[
+              ['FINAL P&L',   fmtPnl(dailyPnl),           dailyPnl >= 0 ? '#00ff88' : '#ff2d78'],
+              ['WIN RATE',    winRate + '%',                 '#00eaff'],
+              ['TOTAL TRADES',totalTrades,                   '#c0c0d0'],
+              ['WIN STREAK',  statMaxStreak + '×',           '#ff8800'],
+              ['BEST TRADE',  statBest != null ? fmtPnl(statBest) : '—',  '#00ff88'],
+              ['WORST TRADE', statWorst != null ? fmtPnl(statWorst) : '—','#ff2d78'],
+            ].map(([label, val, col]) => (
+              <React.Fragment key={label}>
+                <div style={{ color: '#445566' }}>{label}</div>
+                <div style={{ color: col, textShadow: `0 0 6px ${col}55` }}>{val}</div>
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Grade */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '8px', color: '#334455', marginBottom: '6px' }}>PERFORMANCE GRADE</div>
+            <div style={{
+              fontSize: '80px', color: GRADE_COLOR[endGrade],
+              textShadow: `0 0 30px ${GRADE_COLOR[endGrade]}, 0 0 60px ${GRADE_COLOR[endGrade]}55`,
+              animation: 'slam .6s ease-out forwards', lineHeight: 1,
+            }}>{endGrade}</div>
+          </div>
+
+          <button style={{ ...pxBtn(true, '#ffe600'), fontSize: '13px', padding: '14px 28px', marginTop: '4px' }} onClick={restart}>
+            ▶ PLAY AGAIN
+          </button>
         </div>
       )}
 
@@ -949,7 +1038,6 @@ export default function App() {
         padding: '0 14px', gap: '14px',
         boxShadow: '0 2px 20px #00ff8818',
       }}>
-        {/* Logo */}
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '9px', color: '#ffe600', textShadow: '0 0 10px #ffe600', whiteSpace: 'nowrap', letterSpacing: '1px', animation: 'neonFlicker 6s infinite' }}>
           ⚔ CANDLE WARS
         </div>
@@ -957,7 +1045,7 @@ export default function App() {
 
         {/* Balance */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: '110px' }}>
-          <span style={{ fontSize: '9px', color: '#334455', fontFamily: "'Press Start 2P', monospace", fontSize: '6px' }}>BALANCE</span>
+          <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: '#334455' }}>BALANCE</span>
           <span style={{ fontSize: '22px', color: '#00ff88', textShadow: '0 0 8px #00ff8877' }}>${balance.toFixed(2)}</span>
         </div>
 
@@ -970,59 +1058,59 @@ export default function App() {
         </div>
 
         {/* XP Bar */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '120px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px', minWidth: '130px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: levelInfo.level.color, textShadow: `0 0 6px ${levelInfo.level.color}88` }}>
               {levelInfo.level.name}
             </span>
             <span style={{ fontSize: '12px', color: '#445566' }}>{xp} XP</span>
           </div>
-          <div style={{ height: '9px', background: '#111128', borderRadius: '2px', overflow: 'hidden', border: '1px solid #1e1e50' }}>
-            <div style={{
-              height: '100%', width: levelInfo.progress + '%',
-              background: `linear-gradient(90deg, ${levelInfo.level.color}66, ${levelInfo.level.color})`,
-              boxShadow: `0 0 8px ${levelInfo.level.color}88`,
-              transition: 'width 0.6s ease',
-            }} />
+          <div style={{ height: '8px', background: '#111128', borderRadius: '2px', overflow: 'hidden', border: '1px solid #1e1e50' }}>
+            <div style={{ height: '100%', width: levelInfo.progress + '%', background: `linear-gradient(90deg,${levelInfo.level.color}66,${levelInfo.level.color})`, boxShadow: `0 0 8px ${levelInfo.level.color}88`, transition: 'width .6s ease' }} />
           </div>
         </div>
 
-        {/* Win streak */}
-        {winStreak > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
-            <span style={{ fontSize: '18px', lineHeight: 1 }}>🔥</span>
-            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: '#ff7700', textShadow: '0 0 6px #ff7700' }}>
-              ×{multiplier}
-            </span>
+        {/* Streak / On Fire */}
+        {streak > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', minWidth: '40px' }}>
+            <span style={{ fontSize: '18px', lineHeight: 1 }}>{onFire ? '🔥' : '⚡'}</span>
+            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: onFire ? '#ffe600' : '#ff7700', textShadow: `0 0 6px ${onFire ? '#ffe600' : '#ff7700'}` }}>×{multiplier}</span>
           </div>
         )}
 
         {/* Combo */}
-        {comboCount > 0 && (
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: '#ff2d78', textShadow: '0 0 8px #ff2d78', animation: 'blink 0.9s infinite', whiteSpace: 'nowrap' }}>
-            COMBO ×{comboCount}!
+        {combo > 0 && (
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: '#ff2d78', textShadow: '0 0 8px #ff2d78', animation: 'blink .9s infinite', whiteSpace: 'nowrap' }}>
+            COMBO ×{combo}!
           </div>
         )}
 
-        {/* Active effects icons */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          {activeEffects.ironShield && <span style={{ fontSize: '18px', filter: 'drop-shadow(0 0 5px #00eaff)' }} title="Iron Shield active">🛡️</span>}
-          {activeEffects.doubleXP > 0 && <span style={{ fontSize: '18px', filter: 'drop-shadow(0 0 5px #ffe600)' }} title={`Double XP: ${activeEffects.doubleXP} left`}>⚡</span>}
-          {activeEffects.sniperMode && <span style={{ fontSize: '18px', filter: 'drop-shadow(0 0 5px #ff2d78)', animation: 'blink 1s infinite' }} title="Sniper Mode active">🎯</span>}
-          {activeEffects.fastForward && <span style={{ fontSize: '18px', filter: 'drop-shadow(0 0 5px #ff7700)' }} title="Fast Forward active">⏩</span>}
+        {/* Active effects */}
+        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+          {effects.ironShield  && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #00eaff)' }} title="Iron Shield">🛡️</span>}
+          {effects.doubleXP > 0 && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #ffe600)' }} title={`2× XP: ${effects.doubleXP} left`}>⚡</span>}
+          {effects.sniperMode  && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #ff2d78)', animation: 'blink 1s infinite' }} title="Sniper Mode">🎯</span>}
+          {effects.fastForward && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #ff7700)' }} title="Fast Forward">⏩</span>}
         </div>
 
-        {/* Lives */}
-        <div style={{ display: 'flex', gap: '3px', alignItems: 'center', marginLeft: 'auto' }}>
+        {/* Lives — 3 hearts */}
+        <div style={{ display: 'flex', gap: '2px', alignItems: 'center', marginLeft: 'auto' }}>
           <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: '#ff2d78', marginRight: '5px' }}>LIVES</span>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <span key={i} style={{
-              fontSize: '18px',
-              opacity: i < lives ? 1 : 0.18,
-              filter: i < lives ? 'drop-shadow(0 0 4px #ff2d78)' : 'none',
-              transition: 'opacity 0.4s',
-            }}>❤️</span>
-          ))}
+          {[0, 1, 2].map(i => {
+            const full = lives > i;
+            const half = !full && lives > i - .5 && lives <= i;
+            return (
+              <span key={i} style={{
+                fontSize: '18px',
+                opacity: full ? 1 : .2,
+                filter: full ? 'drop-shadow(0 0 4px #ff2d78)' : 'none',
+                transition: 'opacity .4s',
+                animation: full && lives <= 1 ? 'blink 1s infinite' : 'none',
+              }}>
+                {full ? '❤️' : half ? '🩸' : '🖤'}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -1032,53 +1120,37 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
         {/* ═══ LEFT PANEL ═══ */}
-        <div style={{
-          width: '200px', flexShrink: 0,
-          background: '#080818', borderRight: '2px solid #121232',
-          display: 'flex', flexDirection: 'column',
-          padding: '8px 8px', gap: '4px', overflowY: 'auto',
-        }}>
-          {/* Asset list */}
-          <div style={sectionHdr('#ffe600')}>MARKETS</div>
-          {Object.entries(ASSETS).map(([key, asset]) => {
-            const ac = candlesByAsset[key] || [];
-            const p = ac.length ? ac[ac.length - 1].close : asset.basePrice;
-            const pp = ac.length > 1 ? ac[ac.length - 2].close : p;
+        <div style={{ width: '200px', flexShrink: 0, background: '#080818', borderRight: '2px solid #121232', display: 'flex', flexDirection: 'column', padding: '8px', gap: '4px', overflowY: 'auto' }}>
+          <div style={secHdr('#ffe600')}>MARKETS</div>
+          {Object.entries(ASSETS).map(([key, a]) => {
+            const arr = candleMap[key] || [];
+            const p  = arr.length ? arr[arr.length - 1].close : a.basePrice;
+            const pp = arr.length > 1 ? arr[arr.length - 2].close : p;
             const chg = ((p - pp) / pp) * 100;
-            const sel = key === selectedAsset;
+            const sel = key === asset;
             return (
-              <div
-                key={key}
-                onClick={() => setSelectedAsset(key)}
-                style={{
-                  padding: '7px 8px',
-                  background: sel ? asset.color + '14' : '#0a0a1e',
-                  border: `1px solid ${sel ? asset.color : '#181838'}`,
-                  cursor: 'pointer', borderRadius: '2px',
-                  boxShadow: sel ? `0 0 12px ${asset.color}2a` : 'none',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => { if (!sel) e.currentTarget.style.borderColor = asset.color + '55'; }}
+              <div key={key} onClick={() => setAsset(key)}
+                onMouseEnter={e => { if (!sel) e.currentTarget.style.borderColor = a.color + '55'; }}
                 onMouseLeave={e => { if (!sel) e.currentTarget.style.borderColor = '#181838'; }}
-              >
+                style={{
+                  padding: '7px 8px', background: sel ? a.color + '14' : '#0a0a1e',
+                  border: `1px solid ${sel ? a.color : '#181838'}`,
+                  cursor: 'pointer', borderRadius: '2px',
+                  boxShadow: sel ? `0 0 12px ${a.color}2a` : 'none',
+                  transition: 'all .15s',
+                }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: sel ? asset.color : '#556677' }}>
-                    {key}
-                  </span>
-                  <span style={{ fontSize: '13px', color: chg >= 0 ? '#00ff88' : '#ff2d78' }}>
-                    {chg >= 0 ? '▲' : '▼'}{Math.abs(chg).toFixed(2)}%
-                  </span>
+                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: sel ? a.color : '#556677' }}>{key}</span>
+                  <span style={{ fontSize: '13px', color: chg >= 0 ? '#00ff88' : '#ff2d78' }}>{chg >= 0 ? '▲' : '▼'}{Math.abs(chg).toFixed(2)}%</span>
                 </div>
-                <div style={{ fontSize: '17px', color: sel ? asset.color : '#8899bb' }}>
-                  {fmtPrice(p)}
-                </div>
+                <div style={{ fontSize: '17px', color: sel ? a.color : '#8899bb' }}>{fmtP(p)}</div>
               </div>
             );
           })}
 
-          {/* Level card */}
-          <div style={{ ...cardStyle, marginTop: '8px', border: `1px solid ${levelInfo.level.color}44` }}>
-            <div style={{ ...sectionHdr(levelInfo.level.color), marginBottom: '4px' }}>RANK</div>
+          {/* Rank card */}
+          <div style={{ background: '#0c0c22', border: `1px solid ${levelInfo.level.color}44`, borderRadius: '2px', padding: '8px', marginTop: '8px' }}>
+            <div style={{ ...secHdr(levelInfo.level.color), marginBottom: '3px' }}>RANK</div>
             <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: levelInfo.level.color, textShadow: `0 0 8px ${levelInfo.level.color}88`, lineHeight: 1.6 }}>
               {levelInfo.level.name}
             </div>
@@ -1086,11 +1158,11 @@ export default function App() {
           </div>
 
           {/* Sniper predictions */}
-          {activeEffects.sniperMode && sniperPredictions.length > 0 && (
-            <div style={{ ...cardStyle, border: '1px solid #ff2d78', boxShadow: '0 0 12px #ff2d7833' }}>
-              <div style={sectionHdr('#ff2d78')}>🎯 SNIPER</div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', padding: '4px 0' }}>
-                {sniperPredictions.map((d, i) => (
+          {effects.sniperMode && sniperPreds.length > 0 && (
+            <div style={{ background: '#0c0c22', border: '1px solid #ff2d78', borderRadius: '2px', padding: '8px', boxShadow: '0 0 12px #ff2d7833' }}>
+              <div style={secHdr('#ff2d78')}>🎯 SNIPER SCAN</div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                {sniperPreds.map((d, i) => (
                   <div key={i} style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: '22px', color: d === 'UP' ? '#00ff88' : '#ff2d78', textShadow: `0 0 8px ${d === 'UP' ? '#00ff88' : '#ff2d78'}` }}>
                       {d === 'UP' ? '↑' : '↓'}
@@ -1102,96 +1174,78 @@ export default function App() {
             </div>
           )}
 
-          {/* Daily Quests */}
-          <div style={cardStyle}>
-            <div style={sectionHdr('#ffe600')}>QUESTS</div>
+          {/* Quests */}
+          <div style={{ background: '#0c0c22', border: '1px solid #1a1a40', borderRadius: '2px', padding: '8px' }}>
+            <div style={secHdr('#ffe600')}>QUESTS</div>
             {quests.map(q => (
               <div key={q.id} style={{ marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <span style={{ fontSize: '13px', color: q.completed ? '#00ff88' : '#8899aa', maxWidth: '120px', lineHeight: 1.2 }}>{q.name}</span>
-                  <span style={{ fontSize: '12px', color: '#ffe600' }}>+{q.reward}{q.rewardType}</span>
+                  <span style={{ fontSize: '13px', color: q.done ? '#00ff88' : '#8899aa', maxWidth: '115px', lineHeight: 1.2 }}>{q.done ? '✓ ' : ''}{q.name}</span>
+                  <span style={{ fontSize: '12px', color: '#ffe600' }}>+{q.reward}{q.rt}</span>
                 </div>
-                <div style={{ height: '6px', background: '#111128', borderRadius: '3px', overflow: 'hidden', border: '1px solid #1e1e44' }}>
+                <div style={{ height: '5px', background: '#111128', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{
                     height: '100%',
                     width: Math.min(100, (q.progress / q.target) * 100) + '%',
-                    background: q.completed ? 'linear-gradient(90deg,#00ff8877,#00ff88)' : 'linear-gradient(90deg,#ffe60077,#ffe600)',
-                    boxShadow: `0 0 6px ${q.completed ? '#00ff88' : '#ffe600'}`,
-                    transition: 'width 0.5s ease',
+                    background: q.done ? 'linear-gradient(90deg,#00ff8877,#00ff88)' : 'linear-gradient(90deg,#ffe60077,#ffe600)',
+                    boxShadow: `0 0 6px ${q.done ? '#00ff88' : '#ffe600'}`,
+                    transition: 'width .5s',
                   }} />
                 </div>
                 <div style={{ fontSize: '11px', color: '#445566', textAlign: 'right', marginTop: '1px' }}>
-                  {q.type === 'profit' ? '$' + Math.floor(q.progress) + ' / $' + q.target : Math.floor(q.progress) + ' / ' + q.target}
+                  {q.type === 'profit' ? '$' + Math.floor(q.progress) + '/$' + q.target : Math.floor(q.progress) + '/' + q.target}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ═══ CENTER PANEL ═══ */}
+        {/* ═══ CENTER CHART ═══ */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-          {/* Timeframe bar */}
-          <div style={{
-            display: 'flex', gap: '5px', padding: '6px 10px',
-            background: '#07071c', borderBottom: '1px solid #121232',
-            alignItems: 'center', flexShrink: 0,
-          }}>
-            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: ASSETS[selectedAsset].color, textShadow: `0 0 6px ${ASSETS[selectedAsset].color}88`, marginRight: '6px', whiteSpace: 'nowrap' }}>
-              {ASSETS[selectedAsset].name}
+          {/* Timeframe + ticker bar */}
+          <div style={{ display: 'flex', gap: '5px', padding: '5px 10px', background: '#07071c', borderBottom: '1px solid #121232', alignItems: 'center', flexShrink: 0 }}>
+            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: ASSETS[asset].color, textShadow: `0 0 6px ${ASSETS[asset].color}88`, marginRight: '6px', whiteSpace: 'nowrap' }}>
+              {ASSETS[asset].name}
             </span>
-            {TIMEFRAMES.map(tf => (
-              <button key={tf} onClick={() => setTimeframe(tf)} style={pxBtn(tf === timeframe, '#00eaff')}>
-                {tf}
-              </button>
+            {TIMEFRAMES.map(t => (
+              <button key={t} onClick={() => setTf(t)} style={pxBtn(t === tf, '#00eaff')}>{t}</button>
             ))}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '14px', alignItems: 'center' }}>
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: '22px', color: ASSETS[selectedAsset].color, textShadow: `0 0 6px ${ASSETS[selectedAsset].color}77` }}>
-                {fmtPrice(currentPrice)}
+              <span style={{ fontFamily: "'VT323', monospace", fontSize: '22px', color: ASSETS[asset].color, textShadow: `0 0 6px ${ASSETS[asset].color}77` }}>
+                {fmtP(currentPrice)}
               </span>
-              {positions.filter(p => p.asset === selectedAsset).length > 0 && (
+              {positions.some(p => p.asset === asset) && (
                 <span style={{ fontFamily: "'VT323', monospace", fontSize: '20px', color: totalOpenPnl >= 0 ? '#00ff88' : '#ff2d78' }}>
                   {fmtPnl(totalOpenPnl)}
                 </span>
               )}
+              {onFire && <span style={{ fontSize: '20px', animation: 'neonFlicker 2s infinite' }}>🔥 ON FIRE</span>}
             </div>
           </div>
 
-          {/* SVG Chart */}
-          <div style={{
-            flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0,
-          }}>
-            {/* CRT scanlines */}
-            <div style={{
-              position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
-              background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.07) 3px,rgba(0,0,0,0.07) 4px)',
-            }} />
+          {/* SVG Chart with CRT overlay */}
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+            {/* Static scanlines */}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px)' }} />
             {/* Moving scanline */}
-            <div style={{
-              position: 'absolute', left: 0, right: 0, height: '4px',
-              background: 'linear-gradient(transparent,rgba(0,255,136,0.07),transparent)',
-              zIndex: 3, pointerEvents: 'none',
-              animation: 'scanline 5s linear infinite',
-            }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, height: '4px', background: 'linear-gradient(transparent,rgba(0,255,136,.07),transparent)', zIndex: 3, pointerEvents: 'none', animation: 'scanline 5s linear infinite' }} />
+            {/* Vignette */}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.35) 100%)' }} />
             <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-              {renderCandleChart()}
+              <CandleChart candles={candles} positions={positions} currentPrice={currentPrice} assetKey={asset} onFireMode={onFire} />
             </div>
           </div>
 
           {/* Volume chart */}
           <div style={{ height: '68px', background: '#040412', borderTop: '1px solid #111128', flexShrink: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={volumeData} margin={{ top: 4, right: 64, bottom: 0, left: 8 }} barCategoryGap="1%">
+              <BarChart data={volData} margin={{ top: 4, right: 66, bottom: 0, left: 6 }} barCategoryGap="1%">
                 <XAxis dataKey="i" hide />
                 <YAxis hide />
-                <Tooltip
-                  contentStyle={{ background: '#0d0d24', border: '1px solid #252560', fontFamily: 'VT323,monospace', fontSize: '15px', color: '#00eaff', padding: '4px 8px' }}
-                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                  formatter={v => ['Vol: ' + v, '']}
-                />
-                <Bar dataKey="v" radius={[1, 1, 0, 0]}>
-                  {volumeData.map((d, i) => (
-                    <rect key={i} fill={d.fill} />
+                <Bar dataKey="v" radius={[1, 1, 0, 0]} isAnimationActive={false}>
+                  {volData.map((d, i) => (
+                    <Cell key={i} fill={d.up ? '#00ff8844' : '#ff2d7844'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -1200,99 +1254,80 @@ export default function App() {
         </div>
 
         {/* ═══ RIGHT PANEL ═══ */}
-        <div style={{
-          width: '220px', flexShrink: 0,
-          background: '#080818', borderLeft: '2px solid #121232',
-          display: 'flex', flexDirection: 'column',
-          padding: '8px', gap: '5px', overflowY: 'auto',
-        }}>
-          <div style={sectionHdr('#ff2d78')}>⚡ ORDER PANEL</div>
+        <div style={{ width: '218px', flexShrink: 0, background: '#080818', borderLeft: '2px solid #121232', display: 'flex', flexDirection: 'column', padding: '8px', gap: '5px', overflowY: 'auto' }}>
+
+          <div style={secHdr('#ff2d78')}>⚡ ORDER PANEL</div>
 
           {/* Long / Short */}
           <div style={{ display: 'flex', gap: '5px', marginBottom: '2px' }}>
-            <button style={{ ...pxBtn(direction === 'LONG', '#00ff88'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('LONG')}>
-              ▲ LONG
-            </button>
-            <button style={{ ...pxBtn(direction === 'SHORT', '#ff2d78'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('SHORT')}>
-              ▼ SHORT
-            </button>
+            <button style={{ ...pxBtn(direction === 'LONG', '#00ff88'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('LONG')}>▲ LONG</button>
+            <button style={{ ...pxBtn(direction === 'SHORT', '#ff2d78'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('SHORT')}>▼ SHORT</button>
           </div>
 
           {/* Order type */}
           <div style={{ display: 'flex', gap: '3px' }}>
             {['Market', 'Limit', 'Stop'].map(t => (
               <button key={t} style={{ ...pxBtn(orderType === t, '#00eaff'), flex: 1, fontSize: '6px', padding: '5px 2px' }} onClick={() => setOrderType(t)}>
-                {t.toUpperCase()}
+                {t === 'Market' ? 'INSTANT' : t === 'Limit' ? 'SNIPER' : 'TRAP'}
               </button>
             ))}
           </div>
 
           {/* Qty */}
           <div>
-            <div style={{ fontSize: '11px', color: '#445566', marginBottom: '3px' }}>QTY (UNITS 0.01–10)</div>
-            <input type="number" value={quantity} min="0.01" max="10" step="0.01" onChange={e => setQuantity(e.target.value)} style={inputStyle} />
+            <div style={{ fontSize: '11px', color: '#445566', marginBottom: '3px' }}>QTY (0.01–10 UNITS)</div>
+            <input type="number" value={quantity} min="0.01" max="10" step="0.01" onChange={e => setQuantity(e.target.value)} style={inpStyle} />
           </div>
 
-          {/* Conditional price inputs */}
           {orderType === 'Limit' && (
             <div>
               <div style={{ fontSize: '11px', color: '#445566', marginBottom: '3px' }}>LIMIT PRICE</div>
-              <input type="number" value={limitPrice} placeholder={fmtPrice(currentPrice)} onChange={e => setLimitPrice(e.target.value)} style={inputStyle} />
+              <input type="number" value={limitPrice} placeholder={fmtP(currentPrice)} onChange={e => setLimitPrice(e.target.value)} style={inpStyle} />
             </div>
           )}
           {orderType === 'Stop' && (
             <div>
               <div style={{ fontSize: '11px', color: '#445566', marginBottom: '3px' }}>STOP PRICE</div>
-              <input type="number" value={stopPriceInput} placeholder={fmtPrice(currentPrice)} onChange={e => setStopPriceInput(e.target.value)} style={inputStyle} />
+              <input type="number" value={stopPriceIn} placeholder={fmtP(currentPrice)} onChange={e => setStopPriceIn(e.target.value)} style={inpStyle} />
             </div>
           )}
 
-          {/* SL */}
           <div>
             <div style={{ fontSize: '11px', color: '#ff2d78', marginBottom: '3px' }}>STOP LOSS</div>
-            <input type="number" value={slPrice} placeholder="Optional" onChange={e => setSlPrice(e.target.value)} style={{ ...inputStyle, borderColor: slPrice ? '#ff2d78' : '#252550' }} />
+            <input type="number" value={slPrice} placeholder="Optional" onChange={e => setSlPrice(e.target.value)} style={{ ...inpStyle, borderColor: slPrice ? '#ff2d78' : '#252550' }} />
           </div>
 
-          {/* TP */}
           <div>
             <div style={{ fontSize: '11px', color: '#00ff88', marginBottom: '3px' }}>TAKE PROFIT</div>
-            <input type="number" value={tpPrice} placeholder="Optional" onChange={e => setTpPrice(e.target.value)} style={{ ...inputStyle, borderColor: tpPrice ? '#00ff88' : '#252550' }} />
+            <input type="number" value={tpPrice} placeholder="Optional" onChange={e => setTpPrice(e.target.value)} style={{ ...inpStyle, borderColor: tpPrice ? '#00ff88' : '#252550' }} />
           </div>
 
-          {/* Mkt price hint */}
-          <div style={{ fontSize: '13px', color: '#334455', textAlign: 'center' }}>
-            MKT: {fmtPrice(currentPrice)}
-          </div>
+          <div style={{ fontSize: '13px', color: '#334455', textAlign: 'center' }}>MKT: {fmtP(currentPrice)}</div>
 
-          {/* BUY / SELL button */}
-          <button
-            onClick={openPosition}
+          <button onClick={openPosition}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = `0 0 28px ${direction === 'LONG' ? '#00ff8866' : '#ff2d7866'}`; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = `0 0 18px ${direction === 'LONG' ? '#00ff8833' : '#ff2d7833'}`; }}
             style={{
               background: direction === 'LONG' ? '#00ff8818' : '#ff2d7818',
               border: `2px solid ${direction === 'LONG' ? '#00ff88' : '#ff2d78'}`,
               color: direction === 'LONG' ? '#00ff88' : '#ff2d78',
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: '11px', padding: '11px',
+              fontFamily: "'Press Start 2P', monospace", fontSize: '11px', padding: '11px',
               cursor: 'pointer', width: '100%',
               boxShadow: `0 0 18px ${direction === 'LONG' ? '#00ff8833' : '#ff2d7833'}`,
-              transition: 'all 0.12s', marginBottom: '4px',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = `0 0 28px ${direction === 'LONG' ? '#00ff8866' : '#ff2d7866'}`; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = `0 0 18px ${direction === 'LONG' ? '#00ff8833' : '#ff2d7833'}`; }}
-          >
-            {direction === 'LONG' ? '▲ BUY' : '▼ SELL'} {orderType.toUpperCase()}
+              transition: 'all .12s', marginBottom: '4px',
+            }}>
+            {direction === 'LONG' ? '▲ LONG ATTACK!' : '▼ SHORT STRIKE!'}
           </button>
 
-          {/* Open positions */}
-          <div style={sectionHdr('#00eaff')}>POSITIONS ({positions.length}/{MAX_POSITIONS})</div>
-          {positions.length === 0 && (
-            <div style={{ fontSize: '13px', color: '#2a3a4a', textAlign: 'center', padding: '10px 0' }}>
-              No open positions
-            </div>
+          {/* Open Positions */}
+          <div style={secHdr('#00eaff')}>POSITIONS ({positions.length}/{MAX_POS})</div>
+          {!positions.length && (
+            <div style={{ fontSize: '13px', color: '#2a3a4a', textAlign: 'center', padding: '10px 0' }}>No open positions</div>
           )}
           {positions.map(pos => {
             const pnl = calcPnl(pos, currentPrice);
             const inProfit = pnl >= 0;
+            const slInProfit = inProfit && pos.sl;
             return (
               <div key={pos.id} style={{
                 background: '#0a0a20',
@@ -1301,37 +1336,26 @@ export default function App() {
                 boxShadow: inProfit ? '0 0 10px #00ff8818' : '0 0 10px #ff2d7818',
                 marginBottom: '5px',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{
-                    fontFamily: "'Press Start 2P', monospace", fontSize: '6px',
-                    color: pos.direction === 'LONG' ? '#00ff88' : '#ff2d78',
-                  }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: pos.direction === 'LONG' ? '#00ff88' : '#ff2d78' }}>
                     {pos.direction === 'LONG' ? '▲' : '▼'} {pos.asset}
                   </span>
-                  <button
-                    onClick={() => closePositionManual(pos.id)}
-                    style={{
-                      background: 'transparent', border: '1px solid #ff2d78',
-                      color: '#ff2d78', fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '5px', padding: '2px 5px', cursor: 'pointer',
-                      transition: 'background 0.1s',
-                    }}
+                  <button onClick={() => closeManual(pos.id)}
+                    style={{ background: 'transparent', border: '1px solid #ff2d78', color: '#ff2d78', fontFamily: "'Press Start 2P', monospace", fontSize: '5px', padding: '2px 5px', cursor: 'pointer' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#ff2d7822'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     CLOSE
                   </button>
                 </div>
-                <div style={{ fontSize: '13px', color: '#556677', marginBottom: '2px' }}>
-                  {fmtPrice(pos.entry)} × {pos.quantity}
-                </div>
-                {pos.sl && <div style={{ fontSize: '12px', color: '#ff2d78aa' }}>SL: {fmtPrice(pos.sl)}</div>}
-                {pos.tp && <div style={{ fontSize: '12px', color: '#00ff88aa' }}>TP: {fmtPrice(pos.tp)}</div>}
-                <div style={{
-                  fontSize: '20px', fontWeight: 'bold', textAlign: 'right',
-                  color: inProfit ? '#00ff88' : '#ff2d78',
-                  textShadow: `0 0 8px ${inProfit ? '#00ff8877' : '#ff2d7877'}`,
-                }}>
+                <div style={{ fontSize: '13px', color: '#556677', marginBottom: '2px' }}>{fmtP(pos.entry)} × {pos.quantity}</div>
+                {pos.sl && (
+                  <div style={{ fontSize: '12px', color: slInProfit ? '#FFD700' : '#ff2d78aa', marginBottom: '1px' }}>
+                    {slInProfit ? '🛡' : ''} SL: {fmtP(pos.sl)}
+                    {slInProfit && <span style={{ color: '#FFD700', marginLeft: '4px', fontSize: '10px' }}>PROTECTED</span>}
+                  </div>
+                )}
+                {pos.tp && <div style={{ fontSize: '12px', color: '#00ff88aa' }}>TP: {fmtP(pos.tp)}</div>}
+                <div style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'right', color: inProfit ? '#00ff88' : '#ff2d78', textShadow: `0 0 8px ${inProfit ? '#00ff8877' : '#ff2d7877'}` }}>
                   {fmtPnl(pnl)}
                 </div>
               </div>
@@ -1341,74 +1365,40 @@ export default function App() {
       </div>
 
       {/* ══════════════════════════════════════════════════════
-          BOTTOM PANEL — Trade History
+          BOTTOM — Trade History
       ══════════════════════════════════════════════════════ */}
-      <div style={{
-        height: '120px', flexShrink: 0,
-        background: '#060614', borderTop: '2px solid #121232',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      }}>
-        <div style={{
-          padding: '4px 14px 3px',
-          display: 'flex', alignItems: 'center', gap: '14px',
-          borderBottom: '1px solid #111128', flexShrink: 0,
-        }}>
-          <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: '#ffe600', textShadow: '0 0 8px #ffe60077' }}>
-            TRADE HISTORY
-          </span>
-          <span style={{ fontSize: '13px', color: '#334455' }}>Last 10 trades</span>
+      <div style={{ height: '118px', flexShrink: 0, background: '#060614', borderTop: '2px solid #121232', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '3px 14px', display: 'flex', alignItems: 'center', gap: '14px', borderBottom: '1px solid #111128', flexShrink: 0 }}>
+          <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: '#ffe600', textShadow: '0 0 8px #ffe60077' }}>TRADE HISTORY</span>
+          <span style={{ fontSize: '13px', color: '#334455' }}>{totalTrades} trades · {winRate}% WR</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
             <thead>
               <tr style={{ background: '#0a0a22', position: 'sticky', top: 0 }}>
-                {['ASSET', 'DIR', 'ENTRY', 'EXIT', 'P&L', 'GR'].map(h => (
-                  <th key={h} style={{ padding: '2px 10px', textAlign: 'left', color: '#334455', fontFamily: "'Press Start 2P', monospace", fontSize: '6px', whiteSpace: 'nowrap' }}>
-                    {h}
-                  </th>
+                {['ASSET','DIR','ENTRY','EXIT','P&L','HOW'].map(h => (
+                  <th key={h} style={{ padding: '2px 10px', textAlign: 'left', color: '#334455', fontFamily: "'Press Start 2P', monospace", fontSize: '6px', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {tradeHistory.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: '#2a3a4a', padding: '14px', fontSize: '13px' }}>
-                    No trades yet — place your first order!
+              {!tradeHistory.length && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#2a3a4a', padding: '14px', fontSize: '13px' }}>No trades yet — place your first order!</td></tr>
+              )}
+              {tradeHistory.map(t => (
+                <tr key={t.id} style={{ borderBottom: '1px solid #0e0e24' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#0e0e2a'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '2px 10px', color: ASSETS[t.asset]?.color || '#aabbcc', fontFamily: "'Press Start 2P', monospace", fontSize: '6px' }}>{t.asset}</td>
+                  <td style={{ padding: '2px 10px', color: t.direction === 'LONG' ? '#00ff88' : '#ff2d78' }}>{t.direction === 'LONG' ? '▲' : '▼'} {t.direction}</td>
+                  <td style={{ padding: '2px 10px', color: '#556677' }}>{fmtP(t.entry)}</td>
+                  <td style={{ padding: '2px 10px', color: '#556677' }}>{fmtP(t.exit)}</td>
+                  <td style={{ padding: '2px 10px', color: t.pnl >= 0 ? '#00ff88' : '#ff2d78', textShadow: `0 0 6px ${t.pnl >= 0 ? '#00ff8855' : '#ff2d7855'}` }}>{fmtPnl(t.pnl)}</td>
+                  <td style={{ padding: '2px 10px', color: t.reason === 'TP' ? '#00ff88' : t.reason === 'SL' ? '#ff2d78' : '#556677', fontFamily: "'Press Start 2P', monospace", fontSize: '6px' }}>
+                    {t.reason === 'TP' ? '🎯 TP' : t.reason === 'SL' ? '💀 SL' : '✋ MAN'}
                   </td>
                 </tr>
-              )}
-              {tradeHistory.map(t => {
-                const gradeColor = ['S', 'A'].includes(t.grade) ? '#ffe600' : ['B', 'C'].includes(t.grade) ? '#00eaff' : '#ff2d78';
-                return (
-                  <tr
-                    key={t.id}
-                    style={{ borderBottom: '1px solid #0e0e24' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#0e0e2a'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={{ padding: '2px 10px', color: ASSETS[t.asset]?.color || '#aabbcc', fontFamily: "'Press Start 2P', monospace", fontSize: '6px' }}>
-                      {t.asset}
-                    </td>
-                    <td style={{ padding: '2px 10px', color: t.direction === 'LONG' ? '#00ff88' : '#ff2d78' }}>
-                      {t.direction === 'LONG' ? '▲' : '▼'} {t.direction}
-                    </td>
-                    <td style={{ padding: '2px 10px', color: '#556677' }}>{fmtPrice(t.entry)}</td>
-                    <td style={{ padding: '2px 10px', color: '#556677' }}>{fmtPrice(t.exit)}</td>
-                    <td style={{ padding: '2px 10px', color: t.pnl >= 0 ? '#00ff88' : '#ff2d78', textShadow: `0 0 6px ${t.pnl >= 0 ? '#00ff8855' : '#ff2d7855'}` }}>
-                      {fmtPnl(t.pnl)}
-                    </td>
-                    <td style={{ padding: '2px 10px' }}>
-                      <span style={{
-                        fontFamily: "'Press Start 2P', monospace", fontSize: '7px',
-                        color: gradeColor, border: `1px solid ${gradeColor}`,
-                        padding: '1px 5px', borderRadius: '1px',
-                      }}>
-                        {t.grade}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              ))}
             </tbody>
           </table>
         </div>
