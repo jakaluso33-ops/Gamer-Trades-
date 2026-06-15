@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve": "npx serve . -p 4000 --no-clipboard",
+    "deploy": "gh-pages -d . --nojekyll --dotfiles -b gh-pages"
   },
   "dependencies": {
     "react": "^19.2.6",
