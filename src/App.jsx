@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
+import Pricing from './pages/Pricing';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -342,6 +343,10 @@ function CandleChart({ candles, positions, currentPrice, assetKey, onFireMode })
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [page, setPage] = useState(
+    window.location.hash === '#pricing' ? 'pricing' : 'game'
+  );
+
   // inject CSS once
   useEffect(() => {
     if (!document.getElementById('cw-kf')) {
@@ -350,6 +355,10 @@ export default function App() {
       document.head.appendChild(s);
     }
   }, []);
+
+  if (page === 'pricing') {
+    return <Pricing onBack={() => { window.location.hash = ''; setPage('game'); }} />;
+  }
 
   const audioRef        = useRef(null);
   const candleIntRef    = useRef(null);
@@ -1092,6 +1101,14 @@ export default function App() {
           {effects.sniperMode  && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #ff2d78)', animation: 'blink 1s infinite' }} title="Sniper Mode">🎯</span>}
           {effects.fastForward && <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 5px #ff7700)' }} title="Fast Forward">⏩</span>}
         </div>
+
+        {/* Upgrade button */}
+        <button onClick={() => { window.location.hash = '#pricing'; setPage('pricing'); }} style={{
+          background: 'linear-gradient(135deg,#ffe600,#ff8800)',
+          border: 'none', color: '#0a0a1a', fontFamily: "'Press Start 2P', monospace",
+          fontSize: '7px', padding: '6px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+          boxShadow: '0 0 10px #ffe60066',
+        }}>⭐ PRO</button>
 
         {/* Lives — 3 hearts */}
         <div style={{ display: 'flex', gap: '2px', alignItems: 'center', marginLeft: 'auto' }}>
