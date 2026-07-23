@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import Pricing from './pages/Pricing';
 import AuthModal from './components/AuthModal';
+import Onboarding from './components/Onboarding';
 import { supabase } from './lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,6 +375,21 @@ export default function App() {
     await supabase.auth.signOut();
   }
 
+  // ── ONBOARDING ───────────────────────────────────────────────────────────
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true' || params.get('success') === 'false') {
+      localStorage.setItem('cw_onboarded', 'true');
+      return false;
+    }
+    return localStorage.getItem('cw_onboarded') !== 'true';
+  });
+
+  function completeOnboarding() {
+    localStorage.setItem('cw_onboarded', 'true');
+    setShowOnboarding(false);
+  }
+
   // inject CSS once
   useEffect(() => {
     if (!document.getElementById('cw-kf')) {
@@ -384,7 +400,16 @@ export default function App() {
   }, []);
 
   if (page === 'pricing') {
-    return <Pricing onBack={() => { window.location.hash = ''; setPage('game'); }} />;
+    return (
+      <>
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+        <Pricing
+          session={session}
+          onRequestAuth={() => setShowAuthModal(true)}
+          onBack={() => { window.location.hash = ''; setPage('game'); }}
+        />
+      </>
+    );
   }
 
   const audioRef        = useRef(null);
@@ -846,6 +871,14 @@ export default function App() {
     >
 
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+
+      {showOnboarding && (
+        <Onboarding
+          session={session}
+          onRequestAuth={() => setShowAuthModal(true)}
+          onComplete={completeOnboarding}
+        />
+      )}
 
       {/* ── COIN RAIN ── */}
       {coinRain.map(c => (

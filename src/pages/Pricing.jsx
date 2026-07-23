@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-
-const MONTHLY_PRICE_ID = 'price_1TlN8r2OMSlqCc2ouKr7BR73';
-const ANNUAL_PRICE_ID  = 'price_1TlN942OMSlqCc2oPeVfdiIk';
+import { MONTHLY_PRICE_ID, ANNUAL_PRICE_ID } from '../lib/pricing';
 
 const FREE_FEATURES = [
   'Unlimited paper trading',
@@ -36,7 +34,7 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-export default function Pricing({ onBack }) {
+export default function Pricing({ onBack, session, onRequestAuth }) {
   const [billing, setBilling] = useState('monthly');
   const [loading, setLoading] = useState(null);
   const [toast, setToast] = useState(null);
@@ -52,12 +50,23 @@ export default function Pricing({ onBack }) {
   async function handleSubscribe(plan) {
     if (plan === 'free') { onBack(); return; }
 
+    if (!session) {
+      setToast({ type: 'error', msg: 'Log in first to subscribe.' });
+      setTimeout(() => setToast(null), 5000);
+      onRequestAuth?.();
+      return;
+    }
+
     setLoading(plan);
     const priceId = billing === 'monthly' ? MONTHLY_PRICE_ID : ANNUAL_PRICE_ID;
 
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId },
+        body: {
+          priceId,
+          successUrl: `${window.location.origin}${window.location.pathname}?success=true`,
+          cancelUrl: `${window.location.origin}${window.location.pathname}#pricing`,
+        },
       });
       if (error || !data?.url) throw new Error(error?.message ?? 'No checkout URL returned');
       window.location.href = data.url;
