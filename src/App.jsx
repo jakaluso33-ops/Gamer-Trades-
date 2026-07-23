@@ -343,6 +343,114 @@ function CandleChart({ candles, positions, currentPrice, assetKey, onFireMode })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POSITION CARD — with inline SL/TP editing
+// ─────────────────────────────────────────────────────────────────────────────
+const posInpStyle = {
+  background: '#070714', border: '1px solid #252550', color: '#00eaff',
+  fontFamily: "'VT323', monospace", fontSize: '15px',
+  padding: '3px 6px', width: '100%', outline: 'none', borderRadius: '1px',
+};
+
+function PositionCard({ pos, currentPrice, onClose, onUpdateSlTp }) {
+  const [editing, setEditing] = useState(false);
+  const [slInput, setSlInput] = useState(pos.sl != null ? String(pos.sl) : '');
+  const [tpInput, setTpInput] = useState(pos.tp != null ? String(pos.tp) : '');
+  const [err, setErr] = useState(null);
+
+  const pnl = calcPnl(pos, currentPrice);
+  const inProfit = pnl >= 0;
+  const slInProfit = inProfit && pos.sl;
+
+  function startEdit() {
+    setSlInput(pos.sl != null ? String(pos.sl) : '');
+    setTpInput(pos.tp != null ? String(pos.tp) : '');
+    setErr(null);
+    setEditing(true);
+  }
+
+  function save() {
+    const sl = slInput.trim() ? parseFloat(slInput) : null;
+    const tp = tpInput.trim() ? parseFloat(tpInput) : null;
+    if (slInput.trim() && isNaN(sl)) { setErr('Invalid SL price'); return; }
+    if (tpInput.trim() && isNaN(tp)) { setErr('Invalid TP price'); return; }
+    if (pos.direction === 'LONG') {
+      if (sl != null && sl >= currentPrice) { setErr('LONG stop loss must be below current price'); return; }
+      if (tp != null && tp <= currentPrice) { setErr('LONG take profit must be above current price'); return; }
+    } else {
+      if (sl != null && sl <= currentPrice) { setErr('SHORT stop loss must be above current price'); return; }
+      if (tp != null && tp >= currentPrice) { setErr('SHORT take profit must be below current price'); return; }
+    }
+    onUpdateSlTp(pos.id, { sl, tp });
+    setEditing(false);
+  }
+
+  return (
+    <div style={{
+      background: '#0a0a20',
+      border: `1px solid ${inProfit ? '#00ff8833' : '#ff2d7833'}`,
+      borderRadius: '2px', padding: '7px',
+      boxShadow: inProfit ? '0 0 10px #00ff8818' : '0 0 10px #ff2d7818',
+      marginBottom: '5px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+        <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: pos.direction === 'LONG' ? '#00ff88' : '#ff2d78' }}>
+          {pos.direction === 'LONG' ? '▲' : '▼'} {pos.asset}
+        </span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {!editing && (
+            <button onClick={startEdit}
+              style={{ background: 'transparent', border: '1px solid #00eaff', color: '#00eaff', fontFamily: "'Press Start 2P', monospace", fontSize: '5px', padding: '2px 5px', cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#00eaff22'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              SL/TP
+            </button>
+          )}
+          <button onClick={() => onClose(pos.id)}
+            style={{ background: 'transparent', border: '1px solid #ff2d78', color: '#ff2d78', fontFamily: "'Press Start 2P', monospace", fontSize: '5px', padding: '2px 5px', cursor: 'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#ff2d7822'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            CLOSE
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: '13px', color: '#556677', marginBottom: '2px' }}>{fmtP(pos.entry)} × {pos.quantity}</div>
+
+      {editing ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '4px 0' }}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: '#ff2d78aa', width: '28px', flexShrink: 0 }}>SL</span>
+            <input type="number" value={slInput} placeholder="none" onChange={e => setSlInput(e.target.value)} style={{ ...posInpStyle, borderColor: '#ff2d78' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: '#00ff88aa', width: '28px', flexShrink: 0 }}>TP</span>
+            <input type="number" value={tpInput} placeholder="none" onChange={e => setTpInput(e.target.value)} style={{ ...posInpStyle, borderColor: '#00ff88' }} />
+          </div>
+          {err && <div style={{ fontSize: '9px', color: '#ff2d78' }}>{err}</div>}
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button onClick={save} style={{ flex: 1, background: '#00ff8822', border: '1px solid #00ff88', color: '#00ff88', fontFamily: "'Press Start 2P', monospace", fontSize: '6px', padding: '4px', cursor: 'pointer' }}>SAVE</button>
+            <button onClick={() => { setEditing(false); setErr(null); }} style={{ flex: 1, background: 'transparent', border: '1px solid #445566', color: '#778899', fontFamily: "'Press Start 2P', monospace", fontSize: '6px', padding: '4px', cursor: 'pointer' }}>CANCEL</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {pos.sl && (
+            <div style={{ fontSize: '12px', color: slInProfit ? '#FFD700' : '#ff2d78aa', marginBottom: '1px' }}>
+              {slInProfit ? '🛡' : ''} SL: {fmtP(pos.sl)}
+              {slInProfit && <span style={{ color: '#FFD700', marginLeft: '4px', fontSize: '10px' }}>PROTECTED</span>}
+            </div>
+          )}
+          {pos.tp && <div style={{ fontSize: '12px', color: '#00ff88aa' }}>TP: {fmtP(pos.tp)}</div>}
+        </>
+      )}
+
+      <div style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'right', color: inProfit ? '#00ff88' : '#ff2d78', textShadow: `0 0 8px ${inProfit ? '#00ff8877' : '#ff2d7877'}` }}>
+        {fmtPnl(pnl)}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -455,6 +563,7 @@ export default function App() {
   const [tpPrice, setTpPrice]             = useState('');
   const [limitPrice, setLimitPrice]       = useState('');
   const [stopPriceIn, setStopPriceIn]     = useState('');
+  const [oneTapMode, setOneTapMode]       = useState(false);
 
   // ── PHASE ────────────────────────────────────────────────────────────────
   // 'playing' | 'gameOver' | 'continue' | 'powerup' | 'sessionOver'
@@ -800,11 +909,31 @@ export default function App() {
     setSlPrice(''); setTpPrice(''); setLimitPrice(''); setStopPriceIn('');
   }
 
+  // One-tap trading — instant market order in the given direction, skipping
+  // the "select direction then confirm" step. Uses whatever qty/SL/TP is set.
+  function quickTrade(dir) {
+    if (!audioRef.current) audioRef.current = mkAudio();
+    setDirection(dir);
+    if (positions.length >= MAX_POS) { spawn('MAX POSITIONS!', '#ff2d78'); return; }
+    const qty = parseFloat(quantity);
+    if (isNaN(qty) || qty <= 0 || qty > 10) { spawn('INVALID QTY!', '#ff2d78'); return; }
+    const entry = currentPrice;
+    const sl = slPrice ? parseFloat(slPrice) : null;
+    const tp = tpPrice ? parseFloat(tpPrice) : null;
+    setPositions(prev => [...prev, { id: Date.now(), asset, direction: dir, entry, quantity: qty, sl, tp, orderType: 'Market', currentPnl: 0 }]);
+    playSound(audioRef, 'fill');
+    spawn('ONE-TAP FILLED!', '#00eaff');
+  }
+
   function closeManual(posId) {
     const pos = positions.find(p => p.id === posId);
     if (!pos) return;
     resolvePosition(pos, currentPrice, 'Manual');
     setPositions(prev => prev.filter(p => p.id !== posId));
+  }
+
+  function updatePositionSlTp(posId, { sl, tp }) {
+    setPositions(prev => prev.map(p => p.id === posId ? { ...p, sl, tp } : p));
   }
 
   // ── RESTART ───────────────────────────────────────────────────────────────
@@ -1360,10 +1489,27 @@ export default function App() {
 
           <div style={secHdr('#ff2d78')}>⚡ ORDER PANEL</div>
 
+          {/* One-tap trading toggle */}
+          <button
+            onClick={() => setOneTapMode(v => !v)}
+            style={{
+              ...pxBtn(oneTapMode, '#ffe600'), fontSize: '7px', padding: '6px 4px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', marginBottom: '2px',
+            }}
+          >
+            👆 ONE-TAP: {oneTapMode ? 'ON' : 'OFF'}
+          </button>
+
           {/* Long / Short */}
           <div style={{ display: 'flex', gap: '5px', marginBottom: '2px' }}>
-            <button style={{ ...pxBtn(direction === 'LONG', '#00ff88'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('LONG')}>▲ LONG</button>
-            <button style={{ ...pxBtn(direction === 'SHORT', '#ff2d78'), flex: 1, fontSize: '9px' }} onClick={() => setDirection('SHORT')}>▼ SHORT</button>
+            <button
+              style={{ ...pxBtn(direction === 'LONG', '#00ff88'), flex: 1, fontSize: '9px' }}
+              onClick={() => oneTapMode ? quickTrade('LONG') : setDirection('LONG')}
+            >▲ LONG</button>
+            <button
+              style={{ ...pxBtn(direction === 'SHORT', '#ff2d78'), flex: 1, fontSize: '9px' }}
+              onClick={() => oneTapMode ? quickTrade('SHORT') : setDirection('SHORT')}
+            >▼ SHORT</button>
           </div>
 
           {/* Order type */}
@@ -1426,43 +1572,15 @@ export default function App() {
           {!positions.length && (
             <div style={{ fontSize: '13px', color: '#2a3a4a', textAlign: 'center', padding: '10px 0' }}>No open positions</div>
           )}
-          {positions.map(pos => {
-            const pnl = calcPnl(pos, currentPrice);
-            const inProfit = pnl >= 0;
-            const slInProfit = inProfit && pos.sl;
-            return (
-              <div key={pos.id} style={{
-                background: '#0a0a20',
-                border: `1px solid ${inProfit ? '#00ff8833' : '#ff2d7833'}`,
-                borderRadius: '2px', padding: '7px',
-                boxShadow: inProfit ? '0 0 10px #00ff8818' : '0 0 10px #ff2d7818',
-                marginBottom: '5px',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '6px', color: pos.direction === 'LONG' ? '#00ff88' : '#ff2d78' }}>
-                    {pos.direction === 'LONG' ? '▲' : '▼'} {pos.asset}
-                  </span>
-                  <button onClick={() => closeManual(pos.id)}
-                    style={{ background: 'transparent', border: '1px solid #ff2d78', color: '#ff2d78', fontFamily: "'Press Start 2P', monospace", fontSize: '5px', padding: '2px 5px', cursor: 'pointer' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#ff2d7822'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    CLOSE
-                  </button>
-                </div>
-                <div style={{ fontSize: '13px', color: '#556677', marginBottom: '2px' }}>{fmtP(pos.entry)} × {pos.quantity}</div>
-                {pos.sl && (
-                  <div style={{ fontSize: '12px', color: slInProfit ? '#FFD700' : '#ff2d78aa', marginBottom: '1px' }}>
-                    {slInProfit ? '🛡' : ''} SL: {fmtP(pos.sl)}
-                    {slInProfit && <span style={{ color: '#FFD700', marginLeft: '4px', fontSize: '10px' }}>PROTECTED</span>}
-                  </div>
-                )}
-                {pos.tp && <div style={{ fontSize: '12px', color: '#00ff88aa' }}>TP: {fmtP(pos.tp)}</div>}
-                <div style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'right', color: inProfit ? '#00ff88' : '#ff2d78', textShadow: `0 0 8px ${inProfit ? '#00ff8877' : '#ff2d7877'}` }}>
-                  {fmtPnl(pnl)}
-                </div>
-              </div>
-            );
-          })}
+          {positions.map(pos => (
+            <PositionCard
+              key={pos.id}
+              pos={pos}
+              currentPrice={currentPrice}
+              onClose={closeManual}
+              onUpdateSlTp={updatePositionSlTp}
+            />
+          ))}
         </div>
       </div>
 
