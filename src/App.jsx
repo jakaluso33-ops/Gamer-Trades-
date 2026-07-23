@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import Pricing from './pages/Pricing';
+import AuthModal from './components/AuthModal';
+import { supabase } from './lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -346,6 +348,31 @@ export default function App() {
   const [page, setPage] = useState(
     window.location.hash === '#pricing' ? 'pricing' : 'game'
   );
+
+  // ── AUTH ─────────────────────────────────────────────────────────────────
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user) { setProfile(null); return; }
+    let cancelled = false;
+    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+      .then(({ data }) => { if (!cancelled) setProfile(data); });
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+  }
 
   // inject CSS once
   useEffect(() => {
@@ -818,6 +845,8 @@ export default function App() {
       onClick={() => { if (!audioRef.current) audioRef.current = mkAudio(); }}
     >
 
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+
       {/* ── COIN RAIN ── */}
       {coinRain.map(c => (
         <div key={c.id} style={{
@@ -1109,6 +1138,29 @@ export default function App() {
           fontSize: '7px', padding: '6px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
           boxShadow: '0 0 10px #ffe60066',
         }}>⭐ PRO</button>
+
+        {/* Account widget */}
+        {session ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: '#00eaff',
+              whiteSpace: 'nowrap', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis',
+            }} title={session.user.email}>
+              👤 {profile?.username ?? session.user.email}
+            </span>
+            <button onClick={handleLogout} style={{
+              background: 'transparent', border: '2px solid #ff2d78', color: '#ff2d78',
+              fontFamily: "'Press Start 2P', monospace", fontSize: '7px', padding: '6px 10px',
+              cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>LOG OUT</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowAuthModal(true)} style={{
+            background: 'transparent', border: '2px solid #00eaff', color: '#00eaff',
+            fontFamily: "'Press Start 2P', monospace", fontSize: '7px', padding: '6px 10px',
+            cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>👤 LOG IN</button>
+        )}
 
         {/* Lives — 3 hearts */}
         <div style={{ display: 'flex', gap: '2px', alignItems: 'center', marginLeft: 'auto' }}>
